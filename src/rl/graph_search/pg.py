@@ -220,12 +220,16 @@ class PolicyGradient(LFramework):
         return sample_outcome
 
     def predict(self, mini_batch, verbose=False):
+        return_merge_scores= None #'sum'
+        return_merge_scores= 'sum'
+        print("return_merge_scores:", return_merge_scores)
         kg, pn = self.kg, self.mdl
         e1, e2, r = self.format_batch(mini_batch)
         beam_search_output = search.beam_search(
-            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size)
+            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=return_merge_scores)
         pred_e2s = beam_search_output['pred_e2s']
         pred_e2_scores = beam_search_output['pred_e2_scores']
+
         if verbose:
             # print inference paths
             search_traces = beam_search_output['search_traces']
@@ -240,10 +244,14 @@ class PolicyGradient(LFramework):
                         search_trace.append((int(search_traces[k][0][ind]), int(search_traces[k][1][ind])))
                     print('beam {}: score = {} \n<PATH> {}'.format(
                         j, float(pred_e2_scores[i][j]), ops.format_path(search_trace, kg)))
+
         with torch.no_grad():
             pred_scores = zeros_var_cuda([len(e1), kg.num_entities])
             for i in range(len(e1)):
-                pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
+                if return_merge_scores == 'sum' or 'mean':
+                    pred_scores[i][pred_e2s[i].tolist()] = pred_e2_scores[i]
+                else:
+                    pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
         return pred_scores
 
     def record_path_trace(self, path_trace):

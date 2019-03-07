@@ -8,7 +8,8 @@
  
  Experiment Portal.
 """
-
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 import copy
 import itertools
 import numpy as np
@@ -313,6 +314,7 @@ def inference(lf):
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.all_objects, seen_queries, verbose=True)
     else:
+        print ("CHECK verbose True")
         dev_path = os.path.join(args.data_dir, 'dev.triples')
         test_path = os.path.join(args.data_dir, 'test.triples')
         dev_data = data_utils.load_triples(
@@ -739,6 +741,7 @@ def run_experiment(args):
             elif args.run_ablation_studies:
                 run_ablation_studies(args)
             else:
+                print("DEBUG else inference")
                 initialize_model_directory(args)
                 lf = construct_model(args)
                 lf.cuda()
