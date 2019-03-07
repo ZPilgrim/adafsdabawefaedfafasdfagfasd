@@ -9,6 +9,7 @@
 """
 
 import torch
+import time
 
 import src.utils.ops as ops
 from src.utils.ops import unique_max, var_cuda, zeros_var_cuda, int_var_cuda, int_fill_var_cuda, var_to_numpy
@@ -30,8 +31,6 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
     """
     assert (num_steps >= 1)
     batch_size = len(e_s)
-
-    print ("DEBUG batch_size:", batch_size)
 
     def top_k_action(log_action_dist, action_space, return_merge_scores=None):
         """
@@ -64,7 +63,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
             else:
                 reduce_method = None
 
-            all_action_ind = torch.LongTensor([range(beam_action_space_size) for _ in range(len(log_action_dist))]).cuda()
+            all_action_ind = torch.LongTensor([range(beam_action_space_size) for _ in range(len(log_action_dist))]).cuda(device=0)
 
             all_next_r = ops.batch_lookup(r_space.view(batch_size, -1), all_action_ind)
             all_next_e = ops.batch_lookup(e_space.view(batch_size, -1), all_action_ind)
@@ -163,8 +162,6 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
     seen_nodes = int_fill_var_cuda(e_s.size(), kg.dummy_e).unsqueeze(1)
     init_action = (r_s, e_s)
 
-    print ("DEBUG e_s:", e_s.size, batch_size, e_s.shape)  # e_s [1,512]
-
     # path encoder
     pn.initialize_path(init_action, kg)
     if kg.args.save_paths_to_csv:
@@ -185,9 +182,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
         assert (e.size()[0] % batch_size == 0)
         assert (q.size()[0] % batch_size == 0)
         k = int(e.size()[0] / batch_size)
-        # if CHECK:
-        #     print ("DEBUG k:", k) #k=1
-        #     CHECK=False
+
         # => [batch_size*k]
         q = ops.tile_along_beam(q.view(batch_size, -1)[:, 0], k)
         e_s = ops.tile_along_beam(e_s.view(batch_size, -1)[:, 0], k)

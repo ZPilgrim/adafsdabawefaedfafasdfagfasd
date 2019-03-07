@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
  Copyright (c) 2018, salesforce.com, inc.
  All rights reserved.
@@ -7,6 +8,7 @@
  Customized operators and utility functions.
 """
 
+import time
 import numpy as np
 
 import torch
@@ -27,7 +29,7 @@ def batch_lookup(M, idx, vector_output=True):
     """
     batch_size, w = M.size()
     batch_size2, sample_size = idx.size()
-    assert(batch_size == batch_size2)
+    assert (batch_size == batch_size2)
 
     if sample_size == 1 and vector_output:
         samples = torch.gather(M, 1, idx).view(-1)
@@ -142,6 +144,7 @@ def rearrange_vector_list(l, offset):
     for i, v in enumerate(l):
         l[i] = v[offset]
 
+
 def safe_log(x):
     return torch.log(x + EPSILON)
 
@@ -155,7 +158,7 @@ def tile_along_beam(v, beam_size, dim=0):
     if dim == -1:
         dim = len(v.size()) - 1
     v = v.unsqueeze(dim + 1)
-    v = torch.cat([v] * beam_size, dim=dim+1)
+    v = torch.cat([v] * beam_size, dim=dim + 1)
     new_size = []
     for i, d in enumerate(v.size()):
         if i == dim + 1:
@@ -188,11 +191,19 @@ def pack(l, a):
 
 
 def unique_max(unique_x, x, values, marker_2D=None):
+    '''
+
+    :param unique_x: torch.unique(x)
+    :param x:
+    :param values:
+    :param marker_2D:
+    :return:
+    '''
     unique_interval = 100
     unique_values, unique_indices = [], []
     # prevent memory explotion during decoding
     for i in range(0, len(unique_x), unique_interval):
-        unique_x_b = unique_x[i:i+unique_interval]
+        unique_x_b = unique_x[i:i + unique_interval]
         marker_2D = (unique_x_b.unsqueeze(1) == x.unsqueeze(0)).float()
         values_2D = marker_2D * values.unsqueeze(0) - (1 - marker_2D) * HUGE_INT
         unique_values_b, unique_idx_b = values_2D.max(dim=1)
@@ -201,6 +212,88 @@ def unique_max(unique_x, x, values, marker_2D=None):
     unique_values = torch.cat(unique_values)
     unique_idx = torch.cat(unique_indices)
     return unique_values, unique_idx
+
+
+def merge_topk(e2s, scores, method, pad_e=None, pad_s=None):
+    print ("DEBUG e2s type:", type(e2s))
+    beam_size = e2s.shape[1]
+    CHECK = True
+    print ("DEUBG merge_topk beam_size:", beam_size)
+    tot_e2s, tot_scores = [], []
+    for i in range(len(e2s)):
+        es = {}
+        for e, p in zip(e2s[i], scores[i]):
+            # if CHECK:
+            #     print ("DEBUG e, e.tolist():", e, e.tolist())
+            e = e.tolist()
+            if e not in es:
+                es[e] = []
+            es[e].append(p)
+        for e in es:
+            if CHECK:
+                print ("DEBUG es[e]:", es[e])
+            es[e] = method(torch.exp(torch.Tensor(es[e])))
+            if CHECK:
+                print ("DEBUG es[e] exp:", es[e].shape, es[e])
+                CHECK = False
+
+        e2s_ret, scores_ret = zip(*es.items())
+        if len(e2s_ret) < beam_size:
+            if pad_e:
+                pade = nn.ConstantPad1d((0, beam_size - len(e2s_ret)), pad_e)
+                e2s_ret = pade(e2s_ret)
+            if pad_s:
+                pads = nn.ConstantPad1d((0, beam_size - len(e2s_ret)), pad_s)
+                scores_ret = pads(scores_ret)
+        tot_e2s.append(e2s_ret)
+        tot_scores.append(scores_ret)
+    tot_e2s, tot_scores = np.asarray(tot_e2s), torch.Tensor(tot_scores)
+    # tot_scores = torch.Tensor(tot_scores)
+    print ("DEUBG merge_topk tot_e2s:", tot_e2s)
+    print ("DEUBG merge_topk tot_scores:", tot_scores.shape, tot_scores)
+
+    return tot_e2s, tot_scores
+
+
+def merge_same(log_action_prob, next_e, next_r, method):
+    # print("DEUBG t2.1:", time.time())
+    beam_action_space_size = log_action_prob.size()[1]
+    merged_next_e, merged_prob, merged_ind, merged_r = [], [], [], []
+    # print("DEUBG t2.2:", time.time())
+    for i in range(len(log_action_prob)):
+        esi = {}
+        # print("DEUBG t2.3:", time.time())
+        action_ind = range(beam_action_space_size)
+        tup = zip(next_e[i].tolist(), log_action_prob[i].tolist(), action_ind, next_r[i].tolist())
+        # print("DEUBG t2.3.3:", time.time())
+        for e, p, idx, r in tup:
+            if e not in esi:
+                esi[e] = [[p], idx, r]
+            else:
+                #TODO:CHECK 不知道为啥下面的很慢。。。
+                # if p > max(esi[e][0]):
+                #     esi[e][1] = idx
+                #     esi[e][2] = r
+                esi[e][0].append(p)
+
+        line_merge_next_e, info = zip(*esi.items())
+        line_merge_prob = [method(torch.exp(torch.Tensor(_[0]))) for _ in info]
+        line_merge_ind = [_[1] for _ in info]
+        line_merge_r = [_[2] for _ in info]
+        merged_next_e.append(line_merge_next_e)
+        merged_prob.append(line_merge_prob)
+        merged_ind.append(line_merge_ind)
+        merged_r.append(line_merge_r)
+
+    merged_prob, merged_next_e, merged_ind, merged_r = torch.Tensor(merged_prob).cuda(device=0), torch.LongTensor(merged_next_e).cuda(device=0), torch.LongTensor(merged_ind).cuda(device=0), torch.LongTensor(merged_r).cuda(device=0)
+
+    return merged_prob, merged_next_e, merged_ind, merged_r
+
+
+# def merge_same(log_action_prob, next_e, next_r, method):
+#     beam_action_space_size = log_action_prob.size()[1]
+#     merged_next_e, merged_prob, merged_ind, merged_r = [], [], [], []
+#     for i in range(len(log_action_prob)):
 
 
 if __name__ == '__main__':
