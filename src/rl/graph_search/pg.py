@@ -30,6 +30,7 @@ class PolicyGradient(LFramework):
         self.action_dropout_rate = args.action_dropout_rate
         self.action_dropout_anneal_factor = args.action_dropout_anneal_factor
         self.action_dropout_anneal_interval = args.action_dropout_anneal_interval
+        self.return_merge_scores = args.return_merge_scores
 
         # Inference hyperparameters
         self.beam_size = args.beam_size
@@ -220,13 +221,14 @@ class PolicyGradient(LFramework):
         return sample_outcome
 
     def predict(self, mini_batch, verbose=False):
-        return_merge_scores= None #'sum'
-        return_merge_scores= 'sum'
-        print("return_merge_scores:", return_merge_scores)
+        # return_merge_scores= None #'sum'
+        # return_merge_scores= 'sum'
+
+        # print("return_merge_scores:", self.return_merge_scores, type(self.return_merge_scores))
         kg, pn = self.kg, self.mdl
         e1, e2, r = self.format_batch(mini_batch)
         beam_search_output = search.beam_search(
-            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=return_merge_scores)
+            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=self.return_merge_scores)
         pred_e2s = beam_search_output['pred_e2s']
         pred_e2_scores = beam_search_output['pred_e2_scores']
 
@@ -248,7 +250,7 @@ class PolicyGradient(LFramework):
         with torch.no_grad():
             pred_scores = zeros_var_cuda([len(e1), kg.num_entities])
             for i in range(len(e1)):
-                if return_merge_scores == 'sum' or 'mean':
+                if self.return_merge_scores == 'sum' or self.return_merge_scores == 'mean':
                     pred_scores[i][pred_e2s[i].tolist()] = pred_e2_scores[i]
                 else:
                     pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
