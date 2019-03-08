@@ -1,3 +1,14 @@
+return_merge_scores Usage
+
+```
+./experiment-rs.sh configs/nell-995-rs.sh --inference 0 --test --return_merge_scores mean
+./experiment-rs.sh configs/nell-995-rs.sh --inference 0 --test --return_merge_scores sum
+./experiment-rs.sh configs/nell-995-rs.sh --inference 0 --test
+```
+
+
+
+
 # Multi-Hop Knowledge Graph Reasoning with Reward Shaping
 
 This repository contains the source code release of the paper: [Lin et. al. 2018. Multi-Hop Knowledge Graph Reasoning with Reward Shaping](https://arxiv.org/abs/1808.10568).
