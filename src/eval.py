@@ -73,6 +73,63 @@ def hits_and_ranks(examples, scores, all_answers, verbose=False):
 
     return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
 
+def hits_and_ranks_merge(examples, scores, all_answers, verbose=False):
+    """
+        Compute ranking based metrics.
+        """
+    assert (len(examples) == scores.shape[0])
+    # mask false negatives in the predictions
+    dummy_mask = [DUMMY_ENTITY_ID, NO_OP_ENTITY_ID]
+    for i, example in enumerate(examples):
+        e1, e2, r = example
+        e2_multi = dummy_mask + list(all_answers[e1][r])
+        # save the relevant prediction
+        target_score = float(scores[i, e2])
+        # mask all false negatives
+        scores[i, e2_multi] = 0
+        # write back the save prediction
+        scores[i, e2] = target_score
+
+    # sort and rank
+    top_k_scores, top_k_targets = torch.topk(scores, min(scores.size(1), args.beam_size))
+    top_k_targets = top_k_targets.cpu().numpy()
+
+    hits_at_1 = 0
+    hits_at_3 = 0
+    hits_at_5 = 0
+    hits_at_10 = 0
+    mrr = 0
+    for i, example in enumerate(examples):
+        e1, e2, r = example
+        pos = np.where(top_k_targets[i] == e2)[0]
+        if len(pos) > 0:
+            pos = pos[0]
+            if pos < 10:
+                hits_at_10 += 1
+                if pos < 5:
+                    hits_at_5 += 1
+                    if pos < 3:
+                        hits_at_3 += 1
+                        if pos < 1:
+                            hits_at_1 += 1
+            mrr += 1.0 / (pos + 1)
+
+    hits_at_1 = float(hits_at_1) / len(examples)
+    hits_at_3 = float(hits_at_3) / len(examples)
+    hits_at_5 = float(hits_at_5) / len(examples)
+    hits_at_10 = float(hits_at_10) / len(examples)
+    mrr = float(mrr) / len(examples)
+
+    if verbose:
+        print('Hits@1 = {}'.format(hits_at_1))
+        print('Hits@3 = {}'.format(hits_at_3))
+        print('Hits@5 = {}'.format(hits_at_5))
+        print('Hits@10 = {}'.format(hits_at_10))
+        print('MRR = {}'.format(mrr))
+
+    return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
+
+
 def hits_at_k(examples, scores, all_answers, verbose=False):
     """
     Hits at k metrics.

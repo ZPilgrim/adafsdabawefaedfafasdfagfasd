@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
  Copyright (c) 2018, salesforce.com, inc.
  All rights reserved.
@@ -32,6 +33,7 @@ class LFramework(nn.Module):
         self.model = args.model
 
         # Training hyperparameters
+        self.use_abstract_graph = args.use_abstract_graph
         self.batch_size = args.batch_size
         self.train_batch_size = args.train_batch_size
         self.dev_batch_size = args.dev_batch_size
@@ -50,7 +52,7 @@ class LFramework(nn.Module):
 
         self.kg = kg
         self.mdl = mdl
-        print('{} module created'.format(self.model))
+        print('{} module created. abstract_graph:{}'.format(self.model, self.use_abstract_graph))
 
     def print_all_model_parameters(self):
         print('\nModel Parameters')
@@ -142,7 +144,7 @@ class LFramework(nn.Module):
             if self.run_analysis or (epoch_id > 0 and epoch_id % self.num_peek_epochs == 0):
                 self.eval()
                 self.batch_size = self.dev_batch_size
-                dev_scores = self.forward(dev_data, verbose=False)
+                dev_scores = self.forward(dev_data, abs_graph=False, verbose=False)
                 print('Dev set performance: (correct evaluation)')
                 _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.dev_objects, verbose=True)
                 metrics = mrr
@@ -153,7 +155,7 @@ class LFramework(nn.Module):
                     eta = self.action_dropout_anneal_interval
                     if len(dev_metrics_history) > eta and metrics < min(dev_metrics_history[-eta:]):
                         old_action_dropout_rate = self.action_dropout_rate
-                        self.action_dropout_rate *= self.action_dropout_anneal_factor 
+                        self.action_dropout_rate *= self.action_dropout_anneal_factor
                         print('Decreasing action dropout rate: {} -> {}'.format(
                             old_action_dropout_rate, self.action_dropout_rate))
                 # Save checkpoint
@@ -164,7 +166,8 @@ class LFramework(nn.Module):
                         o_f.write('{}'.format(epoch_id))
                 else:
                     # Early stopping
-                    if epoch_id >= self.num_wait_epochs and metrics < np.mean(dev_metrics_history[-self.num_wait_epochs:]):
+                    if epoch_id >= self.num_wait_epochs and metrics < np.mean(
+                            dev_metrics_history[-self.num_wait_epochs:]):
                         break
                 dev_metrics_history.append(metrics)
                 if self.run_analysis:
@@ -191,14 +194,172 @@ class LFramework(nn.Module):
                         with open(fn_ratio_file, 'a') as o_f:
                             o_f.write('{}\n'.format(fn_ratio))
 
-    def forward(self, examples, verbose=False):
+    def run_train_with_abstract(self, train_data, dev_data):
+        self.print_all_model_parameters()
+
+        if self.optim is None:
+            self.optim = optim.Adam(
+                filter(lambda p: p.requires_grad, self.parameters()), lr=self.learning_rate)
+
+        # Track dev metrics changes
+        best_dev_metrics = 0
+        dev_metrics_history = []
+
+        for epoch_id in range(self.start_epoch, self.num_epochs):
+            print('Epoch {}'.format(epoch_id))
+            if self.rl_variation_tag.startswith('rs'):
+                # TODO:CHECK 这里的修改
+                # Reward shaping module sanity check:
+                #   Make sure the reward shaping module output value is in the correct range
+                train_scores = self.test_fn(train_data)
+                dev_scores = self.test_fn(dev_data)
+                print('Train set average fact score: {}'.format(float(train_scores.mean())))
+                print('Dev set average fact score: {}'.format(float(dev_scores.mean())))
+
+            # Update model parameters
+            self.train()
+            if self.rl_variation_tag.startswith('rs'):
+                self.fn.eval()
+                self.fn_kg.eval()
+                if self.model.endswith('hypere'):
+                    self.fn_secondary_kg.eval()
+            self.batch_size = self.train_batch_size
+            random.shuffle(train_data)
+            batch_losses = []
+            batch_losses_abs = []
+            entropies = []
+            entropies_abs = []
+            if self.run_analysis:
+                rewards = None
+                rewards_abs = None
+                fns = None
+                fns_abs = None
+            for example_id in tqdm(range(0, len(train_data), self.batch_size)):
+
+                self.optim.zero_grad()
+
+                mini_batch = train_data[example_id:example_id + self.batch_size]
+                if len(mini_batch) < self.batch_size:
+                    continue
+                loss, loss_abs = self.loss_with_abs(mini_batch)
+                # loss['model_loss'].backward(retain_graph=True)
+                loss['model_loss'].backward()
+                # loss_abs['model_loss'].backward()
+                if self.grad_norm > 0:
+                    clip_grad_norm_(self.parameters(), self.grad_norm)
+
+                self.optim.step()
+
+                loss_abs['model_loss'].backward()
+                if self.grad_norm > 0:
+                    clip_grad_norm_(self.parameters(), self.grad_norm)
+
+                self.optim.step()
+
+                batch_losses.append(loss['print_loss'])
+                batch_losses_abs.append(loss_abs['print_loss'])
+                if 'entropy' in loss:
+                    entropies.append(loss['entropy'])
+                    entropies_abs.append(loss_abs['entropy'])
+                if self.run_analysis:
+                    if rewards is None:
+                        rewards = loss['reward']
+                        rewards_abs = loss_abs['reward']
+                    else:
+                        rewards = torch.cat([rewards, loss['reward']])
+                        rewards_abs = torch.cat([rewards_abs, loss_abs['reward']])
+                    if fns is None:
+                        fns = loss['fn']
+                        fns_abs = loss_abs['fn']
+                    else:
+                        fns = torch.cat([fns, loss['fn']])
+                        fns_abs = torch.cat([fns_abs, loss_abs['fn']])
+            # Check training statistics
+            stdout_msg = 'Epoch {}: average training loss = {} loss_abs={} '.format(epoch_id, np.mean(batch_losses), np.mean(batch_losses_abs))
+            if entropies:
+                stdout_msg += 'entropy = {}'.format(np.mean(entropies))
+                stdout_msg += ' entropy_abs = {}'.format(np.mean(entropies_abs))
+            print(stdout_msg)
+            self.save_checkpoint(checkpoint_id=epoch_id, epoch_id=epoch_id)
+            if self.run_analysis:
+                print('* Analysis: # path types seen = {}'.format(self.num_path_types))
+                num_hits = float(rewards.sum())
+                num_hits_abs = float(rewards_abs.sum())
+                hit_ratio = num_hits / len(rewards)
+                hit_ratio_abs = num_hits_abs / len(rewards)
+                print('* Analysis: # hits = {} ({})'.format(num_hits, hit_ratio))
+                print('* Analysis: # hits_abs = {} ({})'.format(num_hits_abs, hit_ratio_abs))
+                num_fns = float(fns.sum())
+                num_fns_abs = float(fns_abs.sum())
+                fn_ratio = num_fns / len(fns)
+                fn_ratio_abs = num_fns_abs / len(fns_abs)
+                print('* Analysis: false negative ratio = {} {}'.format(fn_ratio, fn_ratio_abs))
+
+            # Check dev set performance
+            if self.run_analysis or (epoch_id > 0 and epoch_id % self.num_peek_epochs == 0):
+                self.eval()
+                self.batch_size = self.dev_batch_size
+                dev_scores = self.forward(dev_data, verbose=False)
+                print('Dev set performance: (correct evaluation)')
+                _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.dev_objects, verbose=True)
+                metrics = mrr
+                print('Dev set performance: (include test set labels)')
+                src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.all_objects, verbose=True)
+                # Action dropout anneaking
+                if self.model.startswith('point'):
+                    eta = self.action_dropout_anneal_interval
+                    if len(dev_metrics_history) > eta and metrics < min(dev_metrics_history[-eta:]):
+                        old_action_dropout_rate = self.action_dropout_rate
+                        self.action_dropout_rate *= self.action_dropout_anneal_factor
+                        print('Decreasing action dropout rate: {} -> {}'.format(
+                            old_action_dropout_rate, self.action_dropout_rate))
+                # Save checkpoint
+                if metrics > best_dev_metrics:
+                    self.save_checkpoint(checkpoint_id=epoch_id, epoch_id=epoch_id, is_best=True)
+                    best_dev_metrics = metrics
+                    with open(os.path.join(self.model_dir, 'best_dev_iteration.dat'), 'w') as o_f:
+                        o_f.write('{}'.format(epoch_id))
+                else:
+                    # Early stopping
+                    if epoch_id >= self.num_wait_epochs and metrics < np.mean(
+                            dev_metrics_history[-self.num_wait_epochs:]):
+                        break
+                dev_metrics_history.append(metrics)
+                if self.run_analysis:
+                    num_path_types_file = os.path.join(self.model_dir, 'num_path_types.dat')
+                    dev_metrics_file = os.path.join(self.model_dir, 'dev_metrics.dat')
+                    hit_ratio_file = os.path.join(self.model_dir, 'hit_ratio.dat')
+                    fn_ratio_file = os.path.join(self.model_dir, 'fn_ratio.dat')
+                    if epoch_id == 0:
+                        with open(num_path_types_file, 'w') as o_f:
+                            o_f.write('{}\n'.format(self.num_path_types))
+                        with open(dev_metrics_file, 'w') as o_f:
+                            o_f.write('{}\n'.format(metrics))
+                        with open(hit_ratio_file, 'w') as o_f:
+                            o_f.write('{}\n'.format(hit_ratio))
+                        with open(fn_ratio_file, 'w') as o_f:
+                            o_f.write('{}\n'.format(fn_ratio))
+                    else:
+                        with open(num_path_types_file, 'a') as o_f:
+                            o_f.write('{}\n'.format(self.num_path_types))
+                        with open(dev_metrics_file, 'a') as o_f:
+                            o_f.write('{}\n'.format(metrics))
+                        with open(hit_ratio_file, 'a') as o_f:
+                            o_f.write('{}\n'.format(hit_ratio))
+                        with open(fn_ratio_file, 'a') as o_f:
+                            o_f.write('{}\n'.format(fn_ratio))
+
+    def forward(self, examples, abs_graph=False, verbose=False):
         pred_scores = []
         for example_id in tqdm(range(0, len(examples), self.batch_size)):
             mini_batch = examples[example_id:example_id + self.batch_size]
             mini_batch_size = len(mini_batch)
             if len(mini_batch) < self.batch_size:
                 self.make_full_batch(mini_batch, self.batch_size)
-            pred_score = self.predict(mini_batch, verbose=verbose)
+            if self.use_abstract_graph and abs_graph:
+                pred_score = self.predict_abs(mini_batch, verbose=verbose)
+            else:
+                pred_score = self.predict(mini_batch, verbose=verbose)
             pred_scores.append(pred_score[:mini_batch_size])
         scores = torch.cat(pred_scores)
         return scores
@@ -207,6 +368,7 @@ class LFramework(nn.Module):
         """
         Convert batched tuples to the tensors accepted by the NN.
         """
+
         def convert_to_binary_multi_subject(e1):
             e1_label = zeros_var_cuda([len(e1), num_labels])
             for i in range(len(e1)):
@@ -239,6 +401,59 @@ class LFramework(nn.Module):
             batch_r = ops.tile_along_beam(batch_r, num_tiles)
             batch_e2 = ops.tile_along_beam(batch_e2, num_tiles)
         return batch_e1, batch_e2, batch_r
+
+    def format_batch_with_abs(self, batch_data, num_labels=-1, num_tiles=1):
+        """
+        Convert batched tuples to the tensors accepted by the NN.
+        """
+
+        def convert_to_binary_multi_subject(e1):
+            e1_label = zeros_var_cuda([len(e1), num_labels])
+            e1_label_abs = zeros_var_cuda([len(e1), num_labels])
+            for i in range(len(e1)):
+                e1_label[i][e1[i]] = 1
+                e1_label_abs[i][self.kg.get_typeid(e1[i])] = 1
+            return e1_label, e1_label_abs
+
+        def convert_to_binary_multi_object(e2):
+            e2_label = zeros_var_cuda([len(e2), num_labels])
+            e2_label_abs = zeros_var_cuda([len(e2), num_labels])
+            for i in range(len(e2)):
+                e2_label[i][e2[i]] = 1
+                e2_label_abs[i][self.kg.get_typeid(e2[i])] = 1
+            return e2_label, e2_label_abs
+
+        batch_e1, batch_e2, batch_r, batch_e1_abs, batch_e2_abs, batch_r_abs = [], [], [], [], [], []
+        for i in range(len(batch_data)):
+            e1, e2, r = batch_data[i]
+            batch_e1.append(e1)
+            batch_e2.append(e2)
+            batch_r.append(r)
+
+            batch_e1_abs.append(self.kg.get_typeid(e1))
+            batch_e2_abs.append(self.kg.get_typeid(e2))
+            batch_r_abs.append(r)
+
+        batch_e1 = var_cuda(torch.LongTensor(batch_e1), requires_grad=False)
+        batch_r = var_cuda(torch.LongTensor(batch_r), requires_grad=False)
+        batch_e1_abs = var_cuda(torch.LongTensor(batch_e1_abs), requires_grad=False)
+        batch_r_abs = var_cuda(torch.LongTensor(batch_r_abs), requires_grad=False)
+        if type(batch_e2[0]) is list:
+            batch_e2, batch_e2_abs = convert_to_binary_multi_object(batch_e2)
+        elif type(batch_e1[0]) is list:
+            batch_e1, batch_e1_abs = convert_to_binary_multi_subject(batch_e1)
+        else:
+            batch_e2 = var_cuda(torch.LongTensor(batch_e2), requires_grad=False)
+            batch_e2_abs = var_cuda(torch.LongTensor(batch_e2_abs), requires_grad=False)
+        # Rollout multiple times for each example
+        if num_tiles > 1:
+            batch_e1 = ops.tile_along_beam(batch_e1, num_tiles)
+            batch_r = ops.tile_along_beam(batch_r, num_tiles)
+            batch_e2 = ops.tile_along_beam(batch_e2, num_tiles)
+            batch_e1_abs = ops.tile_along_beam(batch_e1_abs, num_tiles)
+            batch_r_abs = ops.tile_along_beam(batch_r_abs, num_tiles)
+            batch_e2_abs = ops.tile_along_beam(batch_e2_abs, num_tiles)
+        return batch_e1, batch_e2, batch_r, batch_e1_abs, batch_e2_abs, batch_r_abs
 
     def make_full_batch(self, mini_batch, batch_size, multi_answers=False):
         dummy_e = self.kg.dummy_e

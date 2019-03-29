@@ -11,6 +11,7 @@ import collections
 import numpy as np
 import os
 import pickle
+import copy
 
 START_RELATION = 'START_RELATION'
 NO_OP_RELATION = 'NO_OP_RELATION'
@@ -70,8 +71,10 @@ def get_train_path(args):
                 train_path = os.path.join(args.data_dir, 'train.large.triples')
         else:
             if args.test:
+                print("NELL point else get test path")
                 train_path = os.path.join(args.data_dir, 'train.dev.triples')
             else:
+                print("NELL point else get train path")
                 train_path = os.path.join(args.data_dir, 'train.triples')
     else:
         train_path = os.path.join(args.data_dir, 'train.triples')
@@ -90,7 +93,24 @@ def load_seen_entities(adj_list_path, entity_index_path):
                 seen_entities.add(id2entity[e2])
     print('{} seen entities loaded...'.format(len(seen_entities)))
     return seen_entities
- 
+
+
+# def load_seen_entities_with_abs(adj_list_path, entity_index_path, entity2typeid):
+#     _, id2entity = load_index(entity_index_path)
+#     with open(adj_list_path, 'rb') as f:
+#         adj_list = pickle.load(f)
+#     seen_entities = set()
+#     seen_entities_type = set()
+#     for e1 in adj_list:
+#         seen_entities.add(id2entity[e1])
+#         seen_entities_type.add(entity2typeid(id2entity[e1]))
+#         for r in adj_list[e1]:
+#             for e2 in adj_list[e1][r]:
+#                 seen_entities.add(id2entity[e2])
+#     print('{} seen entities loaded...'.format(len(seen_entities)))
+#     return seen_entities
+
+
 def load_triples_with_label(data_path, r, entity_index_path, relation_index_path, seen_entities=None, verbose=False):
     entity2id, _ = load_index(entity_index_path)
     relation2id, _ = load_index(relation_index_path)
@@ -163,6 +183,19 @@ def load_triples(data_path, entity_index_path, relation_index_path, group_exampl
                 triples.append((e1_id, list(triple_dict[e1_id][r_id]), r_id))
     print('{} triples loaded from {}'.format(len(triples), data_path))
     return triples
+
+def convert_entities2typeids(triples, entity2typeid):
+    ret = []
+    for e1, e2, rs in triples:
+        if type(e2) == list:
+            es = [entity2typeid[_] for _ in e2]
+        else:
+            es = entity2typeid[e2]
+        ret.append(
+            (entity2typeid[e1], es, rs)
+        )
+
+    return ret
 
 def load_entity_hist(input_path):
     entity_hist = {}

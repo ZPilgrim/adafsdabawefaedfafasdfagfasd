@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# -*- coding: utf-8 -*-
 """
  Copyright (c) 2018, salesforce.com, inc.
  All rights reserved.
@@ -31,11 +31,13 @@ from src.rl.graph_search.pn import GraphSearchPolicy
 from src.rl.graph_search.pg import PolicyGradient
 from src.rl.graph_search.rs_pg import RewardShapingPolicyGradient
 from src.utils.ops import flatten
+import pickle
 
 torch.cuda.set_device(args.gpu)
 
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed_all(args.seed)
+
 
 def process_data():
     data_dir = args.data_dir
@@ -43,7 +45,9 @@ def process_data():
     train_path = data_utils.get_train_path(args)
     dev_path = os.path.join(data_dir, 'dev.triples')
     test_path = os.path.join(data_dir, 'test.triples')
-    data_utils.prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, args.test, args.add_reverse_relations)
+    data_utils.prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, args.test,
+                                     args.add_reverse_relations)
+
 
 def initialize_model_directory(args, random_seed=None):
     # add model parameter info to model directory
@@ -177,6 +181,7 @@ def initialize_model_directory(args, random_seed=None):
 
     args.model_dir = model_dir
 
+
 def construct_model(args):
     """
     Construct NN graph.
@@ -192,6 +197,8 @@ def construct_model(args):
         pn = GraphSearchPolicy(args)
         fn_model = args.model.split('.')[2]
         fn_args = copy.deepcopy(args)
+        print("Force fn_kg use_abstract_graph to False:")
+        fn_args.use_abstract_graph = False
         fn_args.model = fn_model
         fn_args.relation_only = False
         if fn_model == 'complex':
@@ -217,6 +224,7 @@ def construct_model(args):
         raise NotImplementedError
     return lf
 
+
 def train(lf):
     train_path = data_utils.get_train_path(args)
     dev_path = os.path.join(args.data_dir, 'dev.triples')
@@ -233,11 +241,16 @@ def train(lf):
     dev_data = data_utils.load_triples(dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities)
     if args.checkpoint_path is not None:
         lf.load_checkpoint(args.checkpoint_path)
-    lf.run_train(train_data, dev_data)
+    if args.use_abstract_graph:
+        lf.run_train_with_abstract(train_data, dev_data)
+    else:
+        lf.run_train(train_data, dev_data)
+
 
 def inference(lf):
     lf.batch_size = args.dev_batch_size
     lf.eval()
+    # TODO:CHECK load model
     if args.model == 'hypere':
         conve_kg_state_dict = get_conve_kg_state_dict(torch.load(args.conve_state_dict_path))
         lf.kg.load_state_dict(conve_kg_state_dict)
@@ -254,11 +267,18 @@ def inference(lf):
         lf.load_checkpoint(get_checkpoint_path(args))
     entity_index_path = os.path.join(args.data_dir, 'entity2id.txt')
     relation_index_path = os.path.join(args.data_dir, 'relation2id.txt')
+
+    with open(os.path.join(args.data_dir, 'entity2typeid.pkl'), 'rb') as f:
+        print("loading entity2typeid.pkl")
+        entity2typeid = pickle.load(f)
     if 'NELL' in args.data_dir:
         adj_list_path = os.path.join(args.data_dir, 'adj_list.pkl')
+        adj_list_abs_path = os.path.join(args.data_dir, 'adj_list_abs.pkl')
         seen_entities = data_utils.load_seen_entities(adj_list_path, entity_index_path)
+        seen_entities_abs = set([entity2typeid[_] for _ in entity2typeid])
     else:
         seen_entities = set()
+        seen_entities_abs = set()
 
     eval_metrics = {
         'dev': {},
@@ -292,7 +312,8 @@ def inference(lf):
         eval_metrics['test']['avg_map'] = map
     elif args.eval_by_relation_type:
         dev_path = os.path.join(args.data_dir, 'dev.triples')
-        dev_data = data_utils.load_triples(dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities)
+        dev_data = data_utils.load_triples(dev_path, entity_index_path, relation_index_path,
+                                           seen_entities=seen_entities)
         pred_scores = lf.forward(dev_data, verbose=False)
         to_m_rels, to_1_rels, _ = data_utils.get_relations_by_type(args.data_dir, relation_index_path)
         relation_by_types = (to_m_rels, to_1_rels)
@@ -304,7 +325,8 @@ def inference(lf):
             dev_data, pred_scores, lf.kg.all_objects, relation_by_types, verbose=True)
     elif args.eval_by_seen_queries:
         dev_path = os.path.join(args.data_dir, 'dev.triples')
-        dev_data = data_utils.load_triples(dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities)
+        dev_data = data_utils.load_triples(dev_path, entity_index_path, relation_index_path,
+                                           seen_entities=seen_entities)
         pred_scores = lf.forward(dev_data, verbose=False)
         seen_queries = data_utils.get_seen_queries(args.data_dir, entity_index_path, relation_index_path)
         print('Dev set evaluation by seen queries (partial graph)')
@@ -313,6 +335,35 @@ def inference(lf):
         print('Dev set evaluation by seen queries (full graph)')
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.all_objects, seen_queries, verbose=True)
+    elif args.use_abstract_graph:
+        print ("CHECK abs verbose True")
+        dev_path = os.path.join(args.data_dir, 'dev.triples')
+        test_path = os.path.join(args.data_dir, 'test.triples')
+        dev_data = data_utils.load_triples(
+            dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        dev_data_abs = data_utils.convert_entities2typeids(dev_data, entity2typeid)
+        test_data = data_utils.load_triples(
+            test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        test_data_abs = data_utils.convert_entities2typeids(test_data, entity2typeid)
+        print('Dev set performance(lf.forward abs_graph=True):')
+        pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
+        dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
+        eval_metrics['dev'] = {}
+        eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
+        eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
+        eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
+        eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
+        eval_metrics['dev']['mrr'] = dev_metrics[4]
+        src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.all_objects_abs, verbose=True)
+        print('Test set performance(lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+        pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
+        test_metrics = src.eval.hits_and_ranks(test_data_abs, pred_scores, lf.kg.all_objects_abs,
+                                               verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
+        eval_metrics['test']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test']['mrr'] = test_metrics[4]
     else:
         print ("CHECK verbose True")
         dev_path = os.path.join(args.data_dir, 'dev.triples')
@@ -342,10 +393,12 @@ def inference(lf):
 
     return eval_metrics
 
+
 def run_ablation_studies(args):
     """
     Run the ablation study experiments reported in the paper.
     """
+
     def set_up_lf_for_inference(args):
         initialize_model_directory(args)
         lf = construct_model(args)
@@ -371,11 +424,13 @@ def run_ablation_studies(args):
     dev_path = os.path.join(args.data_dir, 'dev.triples')
     dev_data = data_utils.load_triples(
         dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
-    to_m_rels, to_1_rels, (to_m_ratio, to_1_ratio) = data_utils.get_relations_by_type(args.data_dir, relation_index_path)
+    to_m_rels, to_1_rels, (to_m_ratio, to_1_ratio) = data_utils.get_relations_by_type(args.data_dir,
+                                                                                      relation_index_path)
     relation_by_types = (to_m_rels, to_1_rels)
     to_m_ratio *= 100
     to_1_ratio *= 100
-    seen_queries, (seen_ratio, unseen_ratio) = data_utils.get_seen_queries(args.data_dir, entity_index_path, relation_index_path)
+    seen_queries, (seen_ratio, unseen_ratio) = data_utils.get_seen_queries(args.data_dir, entity_index_path,
+                                                                           relation_index_path)
     seen_ratio *= 100
     unseen_ratio *= 100
 
@@ -393,7 +448,7 @@ def run_ablation_studies(args):
             config_path = os.path.join('configs', '{}.sh'.format(dataset.lower()))
             args = parser.parse_args()
             args = data_utils.load_configs(args, config_path)
-        
+
         lf = set_up_lf_for_inference(args)
         pred_scores = lf.forward(dev_data, verbose=False)
         _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
@@ -405,11 +460,21 @@ def run_ablation_studies(args):
                 dev_data, pred_scores, lf.kg.dev_objects, relation_by_types, verbose=True)
         seen_mrr, unseen_mrr = src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.dev_objects, seen_queries, verbose=True)
-        mrrs[system] = {'': mrr * 100}
-        to_m_mrrs[system] = {'': to_m_mrr * 100}
-        to_1_mrrs[system] = {'': to_1_mrr  * 100}
-        seen_mrrs[system] = {'': seen_mrr * 100}
-        unseen_mrrs[system] = {'': unseen_mrr * 100}
+        mrrs[system] = {
+            '': mrr * 100
+            }
+        to_m_mrrs[system] = {
+            '': to_m_mrr * 100
+            }
+        to_1_mrrs[system] = {
+            '': to_1_mrr * 100
+            }
+        seen_mrrs[system] = {
+            '': seen_mrr * 100
+            }
+        unseen_mrrs[system] = {
+            '': unseen_mrr * 100
+            }
         _, _, _, _, mrr_full_kg = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
         if to_1_ratio == 0:
             to_m_mrr_full_kg = mrr_full_kg
@@ -437,16 +502,20 @@ def run_ablation_studies(args):
     print('\tTo-many\t\t\t\tTo-one\t\t')
     print('%\tOurs\t-RS\t-AD\t%\tOurs\t-RS\t-AD')
     print('{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})\t{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})'.format(
-        to_m_ratio, to_m_mrrs['ours'][''], to_m_mrrs['-rs'][''], rel_change(to_m_mrrs, '-rs', ''), to_m_mrrs['-ad'][''], rel_change(to_m_mrrs, '-ad', ''),
-        to_1_ratio, to_1_mrrs['ours'][''], to_1_mrrs['-rs'][''], rel_change(to_1_mrrs, '-rs', ''), to_1_mrrs['-ad'][''], rel_change(to_1_mrrs, '-ad', '')))
+        to_m_ratio, to_m_mrrs['ours'][''], to_m_mrrs['-rs'][''], rel_change(to_m_mrrs, '-rs', ''), to_m_mrrs['-ad'][''],
+        rel_change(to_m_mrrs, '-ad', ''),
+        to_1_ratio, to_1_mrrs['ours'][''], to_1_mrrs['-rs'][''], rel_change(to_1_mrrs, '-rs', ''), to_1_mrrs['-ad'][''],
+        rel_change(to_1_mrrs, '-ad', '')))
     print('--------------------------')
     # performance w.r.t. seen queries (table 5, 7)
     print('Performance w.r.t. seen/unseen queries')
     print('\tSeen\t\t\t\tUnseen\t\t')
     print('%\tOurs\t-RS\t-AD\t%\tOurs\t-RS\t-AD')
     print('{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})\t{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})'.format(
-        seen_ratio, seen_mrrs['ours'][''], seen_mrrs['-rs'][''], rel_change(seen_mrrs, '-rs', ''), seen_mrrs['-ad'][''], rel_change(seen_mrrs, '-ad', ''),
-        unseen_ratio, unseen_mrrs['ours'][''], unseen_mrrs['-rs'][''], rel_change(unseen_mrrs, '-rs', ''), unseen_mrrs['-ad'][''], rel_change(unseen_mrrs, '-ad', '')))
+        seen_ratio, seen_mrrs['ours'][''], seen_mrrs['-rs'][''], rel_change(seen_mrrs, '-rs', ''), seen_mrrs['-ad'][''],
+        rel_change(seen_mrrs, '-ad', ''),
+        unseen_ratio, unseen_mrrs['ours'][''], unseen_mrrs['-rs'][''], rel_change(unseen_mrrs, '-rs', ''),
+        unseen_mrrs['-ad'][''], rel_change(unseen_mrrs, '-ad', '')))
     print()
     print('Full graph evaluation')
     print('--------------------------')
@@ -458,27 +527,36 @@ def run_ablation_studies(args):
     print('\tTo-many\t\t\t\tTo-one\t\t')
     print('%\tOurs\t-RS\t-AD\t%\tOurs\t-RS\t-AD')
     print('{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})\t{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})'.format(
-        to_m_ratio, to_m_mrrs['ours']['full_kg'], to_m_mrrs['-rs']['full_kg'], rel_change(to_m_mrrs, '-rs', 'full_kg'), to_m_mrrs['-ad']['full_kg'], rel_change(to_m_mrrs, '-ad', 'full_kg'),
-        to_1_ratio, to_1_mrrs['ours']['full_kg'], to_1_mrrs['-rs']['full_kg'], rel_change(to_1_mrrs, '-rs', 'full_kg'), to_1_mrrs['-ad']['full_kg'], rel_change(to_1_mrrs, '-ad', 'full_kg')))
+        to_m_ratio, to_m_mrrs['ours']['full_kg'], to_m_mrrs['-rs']['full_kg'], rel_change(to_m_mrrs, '-rs', 'full_kg'),
+        to_m_mrrs['-ad']['full_kg'], rel_change(to_m_mrrs, '-ad', 'full_kg'),
+        to_1_ratio, to_1_mrrs['ours']['full_kg'], to_1_mrrs['-rs']['full_kg'], rel_change(to_1_mrrs, '-rs', 'full_kg'),
+        to_1_mrrs['-ad']['full_kg'], rel_change(to_1_mrrs, '-ad', 'full_kg')))
     print('--------------------------')
     print('Performance w.r.t. seen/unseen queries')
     print('\tSeen\t\t\t\tUnseen\t\t')
     print('%\tOurs\t-RS\t-AD\t%\tOurs\t-RS\t-AD')
     print('{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})\t{:.1f}\t{:.1f}\t{:.1f} ({:d})\t{:.1f} ({:d})'.format(
-        seen_ratio, seen_mrrs['ours']['full_kg'], seen_mrrs['-rs']['full_kg'], rel_change(seen_mrrs, '-rs', 'full_kg'), seen_mrrs['-ad']['full_kg'], rel_change(seen_mrrs, '-ad', 'full_kg'),
-        unseen_ratio, unseen_mrrs['ours']['full_kg'], unseen_mrrs['-rs']['full_kg'], rel_change(unseen_mrrs, '-rs', 'full_kg'), unseen_mrrs['-ad']['full_kg'], rel_change(unseen_mrrs, '-ad', 'full_kg')))
+        seen_ratio, seen_mrrs['ours']['full_kg'], seen_mrrs['-rs']['full_kg'], rel_change(seen_mrrs, '-rs', 'full_kg'),
+        seen_mrrs['-ad']['full_kg'], rel_change(seen_mrrs, '-ad', 'full_kg'),
+        unseen_ratio, unseen_mrrs['ours']['full_kg'], unseen_mrrs['-rs']['full_kg'],
+        rel_change(unseen_mrrs, '-rs', 'full_kg'), unseen_mrrs['-ad']['full_kg'],
+        rel_change(unseen_mrrs, '-ad', 'full_kg')))
+
 
 def export_to_embedding_projector(lf):
     lf.load_checkpoint(get_checkpoint_path(args))
     lf.export_to_embedding_projector()
 
+
 def export_reward_shaping_parameters(lf):
     lf.load_checkpoint(get_checkpoint_path(args))
     lf.export_reward_shaping_parameters()
 
+
 def export_fuzzy_facts(lf):
     lf.load_checkpoint(get_checkpoint_path(args))
     lf.export_fuzzy_facts()
+
 
 def export_error_cases(lf):
     lf.load_checkpoint(get_checkpoint_path(args))
@@ -493,6 +571,7 @@ def export_error_cases(lf):
     pred_scores = lf.forward(dev_data, verbose=False)
     src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
     src.eval.export_error_cases(dev_data, pred_scores, lf.kg.dev_objects, os.path.join(lf.model_dir, 'error_cases.pkl'))
+
 
 def compute_fact_scores(lf):
     data_dir = args.data_dir
@@ -514,11 +593,13 @@ def compute_fact_scores(lf):
     print('Dev set average fact score: {}'.format(float(dev_scores.mean())))
     print('Test set average fact score: {}'.format(float(test_scores.mean())))
 
+
 def get_checkpoint_path(args):
     if not args.checkpoint_path:
         return os.path.join(args.model_dir, 'model_best.tar')
     else:
         return args.checkpoint_path
+
 
 def load_configs(config_path):
     with open(config_path) as f:
@@ -551,8 +632,8 @@ def load_configs(config_path):
                 raise ValueError('Unrecognized argument: {}'.format(arg_name))
     return args
 
-def run_experiment(args):
 
+def run_experiment(args):
     if args.test:
         if 'NELL' in args.data_dir:
             dataset = os.path.basename(args.data_dir)
@@ -630,7 +711,7 @@ def run_experiment(args):
                     o_f.write('Hits@10 mean: {:.3f}\tstd: {:.6f}\n'.format(np.mean(hits_at_10s_), np.std(hits_at_10s_)))
                     o_f.write('MRR mean: {:.3f}\tstd: {:.6f}\n'.format(np.mean(mrrs_), np.std(mrrs_)))
                     o_f.close()
-                    
+
                 # find best random seed
                 best_random_seed, best_mrr = sorted(mrrs_search.items(), key=lambda x: x[1], reverse=True)[0]
                 print('* Best Random Seed = {}'.format(best_random_seed))
@@ -717,7 +798,7 @@ def run_experiment(args):
                             key, hits_at_1s[key], hits_at_10s[key], mrrs[key]))
                     o_f.write('------------------------------------------\n')
                     # find best hyperparameter set
-                    best_signature, best_mrr = sorted(mrrs.items(), key=lambda x:x[1], reverse=True)[0]
+                    best_signature, best_mrr = sorted(mrrs.items(), key=lambda x: x[1], reverse=True)[0]
                     print('* best hyperparameter set')
                     o_f.write('* best hyperparameter set\n')
                     best_hp_values = best_signature.split(':')[1:]
@@ -741,12 +822,13 @@ def run_experiment(args):
             elif args.run_ablation_studies:
                 run_ablation_studies(args)
             else:
-                print("DEBUG else inference")
+                print("DEBUG else inference or train")
                 initialize_model_directory(args)
                 lf = construct_model(args)
                 lf.cuda()
 
                 if args.train:
+                    print("DEBUG else train")
                     train(lf)
                 elif args.inference:
                     inference(lf)
@@ -764,6 +846,7 @@ def run_experiment(args):
                     export_fuzzy_facts(lf)
                 elif args.export_error_cases:
                     export_error_cases(lf)
+
 
 if __name__ == '__main__':
     run_experiment(args)

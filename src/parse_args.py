@@ -10,7 +10,6 @@
 import argparse
 import os
 
-
 parser = argparse.ArgumentParser(description='Multi-Hop Knowledge Graph Reasoning with Reward Shaping')
 
 # Experiment control
@@ -35,7 +34,9 @@ parser.add_argument('--run_analysis', action='store_true',
                     help='run algorithm analysis and print intermediate results (default: False)')
 parser.add_argument('--data_dir', type=str, default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data'),
                     help='directory where the knowledge graph data is stored (default: None)')
-parser.add_argument('--model_root_dir', type=str, default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'model'),
+parser.add_argument('--use_abstract_graph', type=bool, default=False, help='use_abstract_graph')
+parser.add_argument('--model_root_dir', type=str,
+                    default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'model'),
                     help='root directory where the model parameters are stored (default: None)')
 parser.add_argument('--model_dir', type=str, default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'model'),
                     help='directory where the model parameters are stored (default: None)')
@@ -155,9 +156,9 @@ parser.add_argument('--rnn_dropout_rate', type=float, default=0.0,
 parser.add_argument('--action_dropout_rate', type=float, default=0.1,
                     help='Dropout rate for randomly masking out knowledge graph edges (default: 0.1)')
 parser.add_argument('--action_dropout_anneal_factor', type=float, default=0.95,
-	                help='Decrease the action dropout rate once the dev set results stopped increase (default: 0.95)')
+                    help='Decrease the action dropout rate once the dev set results stopped increase (default: 0.95)')
 parser.add_argument('--action_dropout_anneal_interval', type=int, default=1000,
-		            help='Number of epochs to wait before decreasing the action dropout rate (default: 1000. Action '
+                    help='Number of epochs to wait before decreasing the action dropout rate (default: 1000. Action '
                          'dropout annealing is not used when the value is >= 1000.)')
 parser.add_argument('--num_negative_samples', type=int, default=10,
                     help='Number of negative samples to use for embedding-based methods')
@@ -168,7 +169,7 @@ parser.add_argument('--fn_state_dict_path', type=str, default='',
 parser.add_argument('--fn_kg_state_dict_path', type=str, default='',
                     help='(Aborted) Path to the saved knowledge graph embeddings used by a fact network')
 parser.add_argument('--reward_shaping_threshold', type=float, default=0,
-		            help='Threshold cut off of reward shaping scores (default: 0)')
+                    help='Threshold cut off of reward shaping scores (default: 0)')
 parser.add_argument('--mu', type=float, default=1.0,
                     help='Weight over the estimated reward (default: 1.0)')
 

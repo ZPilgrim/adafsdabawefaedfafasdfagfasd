@@ -46,6 +46,19 @@ class RewardShapingPolicyGradient(PolicyGradient):
             fn_kg_state_dict = get_conve_kg_state_dict(fn_state_dict)
         else:
             raise NotImplementedError
+
+        # try:
+        #     from collections import OrderedDict
+        #     new_state_dict = OrderedDict()
+        #     for k, v in state_dict.items():
+        #         name = 'module.' + k  # add `module.`
+        #         new_state_dict[name] = v
+        #     # load params
+        #     # model.load_state_dict(new_state_dict)
+        #     self.net.load_state_dict(new_state_dict)
+        # except Exception as e:
+        #     print(e)
+
         self.fn_kg.load_state_dict(fn_kg_state_dict)
         if fn_model == 'hypere':
             complex_state_dict = torch.load(args.complex_state_dict_path)
