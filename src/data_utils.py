@@ -231,13 +231,16 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
 
     def get_type(e_name):
         if e_name == DUMMY_ENTITY:
-            return DUMMY_ENTITY
+            return DUMMY_ENTITY_ID
+        if e_name == NO_OP_ENTITY:
+            return NO_OP_ENTITY_ID
         if 'nell-995' in data_dir.lower():
             if '_' in e_name:
                 return e_name.split('_')[1]
             else:
                 return 'numerical'
         else:
+            assert(1==0) #针对其他数据集这里需要重新get type
             return 'entity'
 
     def hist_to_vocab(_dict):
@@ -269,6 +272,7 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
         entity_hist[e1] += 1
         entity_hist[e2] += 1
         if 'nell-995' in data_dir.lower():
+            # 在训练样本中不会出现dummy和no_op，所以不影响
             t1 = e1.split('_')[1] if '_' in e1 else 'numerical'
             t2 = e2.split('_')[1] if '_' in e2 else 'numerical'
         else:
@@ -293,6 +297,8 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
         for r, freq in hist_to_vocab(relation_hist):
             o_f.write('{}\t{}\n'.format(r, freq))
     with open(os.path.join(data_dir, 'type2id.txt'), 'w') as o_f:
+        o_f.write('{}\t{}\n'.format(DUMMY_ENTITY, DUMMY_ENTITY_ID))
+        o_f.write('{}\t{}\n'.format(NO_OP_ENTITY, NO_OP_ENTITY_ID))
         for t, freq in hist_to_vocab(type_hist):
             o_f.write('{}\t{}\n'.format(t, freq))
     print('{} entities indexed'.format(len(entity_hist)))
@@ -305,6 +311,8 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
     removed_triples = set(removed_triples)
     adj_list = collections.defaultdict(collections.defaultdict)
     entity2typeid = [0 for i in range(len(entity2id))]
+    entity2typeid[DUMMY_ENTITY_ID] =  DUMMY_ENTITY_ID
+    entity2typeid[NO_OP_ENTITY_ID] = NO_OP_ENTITY_ID
     num_facts = 0
     for line in set(raw_kb_triples + keep_triples):
         e1, e2, r = line.strip().split()
