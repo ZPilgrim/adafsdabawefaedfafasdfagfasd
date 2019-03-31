@@ -411,7 +411,7 @@ class GraphSearchPolicy(nn.Module):
             # raise NotImplementedError
             action_space = self.get_action_space(e, obs, kg)
             action_dist, entropy = policy_nn_fun(X2, action_space)
-
+            
             # action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
             action_space_abs = self.generate_action_space_abs(action_space, e_abs, obs_abs, kg)
             action_dist_abs, entropy_abs = policy_nn_fun_abs(X2_abs, action_space_abs)
@@ -442,27 +442,35 @@ class GraphSearchPolicy(nn.Module):
             print("len of r_space", len(r_space))
             print("len of type_space", len(type_space))
             assert(len(r_space) == len(type_space))
-            print(r_space)
+            print("type_space")
             print(type_space)
+            print("action_mask")
+            print(action_mask)
 
             filter_r_space = []
             filter_type_space = []
             filter_action_mask = []
+            print(len(r_space))
+            print(len(r_space[0]))
             for i in range(len(r_space)):
                 temp = set()
                 for _ in range(len(r_space[0])):
+                    #print((r_space[i, _].tolist(), type_space[i, _].tolist()))
                 #重复action或者是paddingaction
-                    if (r_space[i, _], type_space[i, _]) in temp or action_mask[i, _] == 0:
+                    # or action_mask[i, _] == 0:
+                    if (r_space[i, _].tolist(), type_space[i, _].tolist()) in temp:
                         temp.add((self.kg.dummy_r, self.kg.get_typeid(self.kg.dummy_e)))
                         filter_action_mask.append(0)
                         filter_r_space.append(self.kg.dummy_r)
                         filter_type_space.append(
                             self.kg.get_typeid(self.kg.dummy_e))
                     else:
-                        filter_r_space.append(r_space[i, _])
-                        filter_type_space.append(type_space[i, _])
-                        temp.add((r_space[i, _], type_space[i, _]))
+                        filter_r_space.append(r_space[i, _].tolist())
+                        filter_type_space.append(type_space[i, _].tolist())
+                        temp.add((r_space[i, _].tolist(),
+                                  type_space[i, _].tolist()))
                         filter_action_mask.append(1)
+
             filter_r_space = var_cuda(
                 torch.LongTensor(filter_r_space), requires_grad=False)
             filter_type_space = var_cuda(
@@ -473,9 +481,14 @@ class GraphSearchPolicy(nn.Module):
             filter_type_space = filter_type_space.view(e_space.size()[0], e_space.size()[1])
             filter_r_space = filter_r_space.view(r_space.size()[0], r_space.size()[1])
             filter_action_mask = filter_action_mask.view(action_mask.size()[0], action_mask.size()[1])
+            print("filter_type_space")
+            print(filter_type_space)
+            print("filter_action_mask")
+            print(filter_action_mask)
+            print("filter_r_space")
+            print(filter_r_space)
             return filter_r_space, filter_type_space, filter_action_mask
-
-
+        
         (r_space, e_space), action_mask = action_space
         print(e_space)
         type_space = emat2tmat(e_space)
