@@ -195,10 +195,10 @@ def construct_model(args):
         kg.load_fuzzy_facts()
 
     if args.model in ['point', 'point.gc']:
-        pn = GraphSearchPolicy(args)
+        pn = GraphSearchPolicy(kg, args)
         lf = PolicyGradient(args, kg, pn)
     elif args.model.startswith('point.rs'):
-        pn = GraphSearchPolicy(args)
+        pn = GraphSearchPolicy(kg, args)
         fn_model = args.model.split('.')[2]
         fn_args = copy.deepcopy(args)
         print("Force fn_kg use_abstract_graph to False:")

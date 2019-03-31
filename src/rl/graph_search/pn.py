@@ -7,7 +7,7 @@
  
  Graph Search Policy Network.
 """
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +17,7 @@ from src.utils.ops import var_cuda, zeros_var_cuda
 
 
 class GraphSearchPolicy(nn.Module):
-    def __init__(self, args):
+    def __init__(self, kg, args):
         super(GraphSearchPolicy, self).__init__()
         self.model = args.model
         self.relation_only = args.relation_only
@@ -48,6 +48,7 @@ class GraphSearchPolicy(nn.Module):
         # Fact network modules
         self.fn = None
         self.fn_kg = None
+        self.kg = kg
 
     def transit(self, e, obs, kg, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
         """
@@ -411,7 +412,8 @@ class GraphSearchPolicy(nn.Module):
             action_space = self.get_action_space(e, obs, kg)
             action_dist, entropy = policy_nn_fun(X2, action_space)
 
-            action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
+            # action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
+            action_space_abs = self.generate_action_space_abs(action_space, e_abs, obs_abs, kg)
             action_dist_abs, entropy_abs = policy_nn_fun(X2_abs, action_space_abs)
             db_outcomes = [(action_space, action_dist)]
             db_outcomes_abs = [(action_space_abs, action_dist_abs)]
@@ -420,7 +422,69 @@ class GraphSearchPolicy(nn.Module):
 
         print ("+++>>>db_outcomes db_outcomes_abs:", len(db_outcomes), len(db_outcomes_abs))
         return db_outcomes, inv_offset, entropy, db_outcomes_abs, inv_offset_abs, entropy_abs
+    
+    def generate_action_space_abs(self, action_space, e_abs, obs_abs, kg):
+        def emat2tmat(es):
+            ret = []
+            # print(es)
+            # print(es.size())
+            for _ in range(es.size()[0]):
+                for e in es[_]:
+                    ret.append(self.kg.get_typeid(e))
+            ret = np.array(ret)
+            
+            #print("ret {} e_space===>>{} type_space".format(len(es), len(set(ret))) )
+            ret = var_cuda(torch.LongTensor(ret), requires_grad=False)
+            ret = ret.view(es.size()[0], es.size()[1])
+            return ret
 
+        def filter_overlapping(r_space, type_space, action_mask):
+            print("len of r_space", len(r_space))
+            print("len of type_space", len(type_space))
+            assert(len(r_space) == len(type_space))
+            print(r_space)
+            print(type_space)
+
+            filter_r_space = []
+            filter_type_space = []
+            filter_action_mask = []
+            for i in range(len(r_space)):
+                temp = set()
+                for _ in range(len(r_space[0])):
+                #重复action或者是paddingaction
+                    if (r_space[i, _], type_space[i, _]) in temp or action_mask[i, _] == 0:
+                        temp.add((self.kg.dummy_r, self.kg.get_typeid(self.kg.dummy_e)))
+                        filter_action_mask.append(0)
+                        filter_r_space.append(self.kg.dummy_r)
+                        filter_type_space.append(
+                            self.kg.get_typeid(self.kg.dummy_e))
+                    else:
+                        filter_r_space.append(r_space[i, _])
+                        filter_type_space.append(type_space[i, _])
+                        temp.add((r_space[i, _], type_space[i, _]))
+                        filter_action_mask.append(1)
+            filter_r_space = var_cuda(
+                torch.LongTensor(filter_r_space), requires_grad=False)
+            filter_type_space = var_cuda(
+                torch.LongTensor(filter_type_space), requires_grad=False)
+            filter_action_mask = var_cuda(
+                torch.LongTensor(filter_action_mask), requires_grad=False).float()
+
+            filter_type_space = filter_type_space.view(e_space.size()[0], e_space.size()[1])
+            filter_r_space = filter_r_space.view(r_space.size()[0], r_space.size()[1])
+            filter_action_mask = filter_action_mask.view(action_mask.size()[0], action_mask.size()[1])
+            return filter_r_space, filter_type_space, filter_action_mask
+
+
+        (r_space, e_space), action_mask = action_space
+        print(e_space)
+        type_space = emat2tmat(e_space)
+        print(type_space)
+        filter_r_space, filter_type_space, filter_action_mask = filter_overlapping(
+            r_space, type_space, action_mask)
+        return ((filter_r_space, filter_type_space), filter_action_mask)
+
+    
     def initialize_path(self, init_action, kg):
         # [batch_size, action_dim]
         if self.relation_only_in_path:

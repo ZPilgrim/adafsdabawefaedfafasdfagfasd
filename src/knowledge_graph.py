@@ -22,7 +22,7 @@ from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
 
-CUTOFF = False
+CUTOFF = True
 class KnowledgeGraph(nn.Module):
     """
     The discrete knowledge graph is stored with an adjacency list.
