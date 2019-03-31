@@ -414,7 +414,7 @@ class GraphSearchPolicy(nn.Module):
 
             # action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
             action_space_abs = self.generate_action_space_abs(action_space, e_abs, obs_abs, kg)
-            action_dist_abs, entropy_abs = policy_nn_fun(X2_abs, action_space_abs)
+            action_dist_abs, entropy_abs = policy_nn_fun_abs(X2_abs, action_space_abs)
             db_outcomes = [(action_space, action_dist)]
             db_outcomes_abs = [(action_space_abs, action_dist_abs)]
             inv_offset = None

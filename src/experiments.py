@@ -5,7 +5,7 @@
  All rights reserved.
  SPDX-License-Identifier: BSD-3-Clause
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
- 
+
  Experiment Portal.
 """
 # import os
@@ -355,30 +355,75 @@ def inference(lf):
 
         from src.rl.graph_search.beam_search import ABS_ALL_PATH
         # print("read abs_path_dir:", args.abs_path_dir)
-        abs_traces = ABS_ALL_PATH  # pickle.load(open(args.abs_path_dir, 'rb'))
-        tot_paths = []
-        for abs_trace in abs_traces:
-            pred_e2s = abs_trace['pred_e2s'][0]
-            pred_e2_scores = abs_trace['pred_e2_scores'][0]
-            search_traces = abs_trace['search_traces']
-            paths = [[] for _ in range(len(search_traces[0][0]))]
-            tree_path = collections.defaultdict()
-            for step in range(len(search_traces)):
-                for _i in range(len(search_traces[step])):
-                    paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
 
-            for _i in range(len(paths)):
-                paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
-                # for r, e in paths[_i]:
+        def get_next_outs(graph, r, tid):
+            ans = []
+            for e2 in graph[r]:
+                if lf.kg.get_typeid(e2) == tid:
+                    ans.append(e2)
+            return ans
 
-            tot_paths += paths
-            # one path:  [(r_0, e_0), (r_1, e_1), ...(r_3,e_3), (e_3, prob)]
-        # search path
-        tot_real_path = []
-        for path in tot_paths:
-            tot_real_path.append([])
-            for single in path:
-                pass
+        def abs2real_path(abs_traces, data, k=10):
+            tot_paths = []
+            for abs_trace in abs_traces:  # 一个abs_trace代表一个样本
+                pred_e2s = abs_trace['pred_e2s'][0]
+                pred_e2_scores = abs_trace['pred_e2_scores'][0]
+                search_traces = abs_trace['search_traces']
+                paths = [[] for _ in range(len(search_traces[0][0]))]
+
+                for step in range(len(search_traces)):
+                    for _i in range(len(search_traces[step])):
+                        paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
+
+                for _i in range(len(paths)):
+                    paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
+
+                tot_paths.append(paths)  # 认为对应一条样本
+                # one path:  [(r_0, e_0), (r_1, e_1), (r_2, e_2), (r_3,e_3), (e_3, prob)]
+            # search path
+            tot_real_path = []
+            score_rslts = []
+            for i, paths in enumerate(tot_paths):  # paths代表真实一个样本
+                tree_path = collections.defaultdict()
+                e1_0, e2, r_0 = data[i]  # [e1,e2, r]已经是id了 这里假设e2不是list
+                # tot_real_path.append([])
+
+                score_mat = np.zeros([1, lf.kg.num_entities], dtype=np.float32)
+                real_e3_score = []
+                for path in paths:  # 一条样本的一个path
+                    if lf.kg.get_typeid(e1_0) != path[0][1]:
+                        print(" ERROR e1 != path[0][1]:", e1_0, path[0][1], " idx:", i)
+                        continue
+                    if e1_0 in lf.kg.adj_list:
+                        tree_path[e1_0] = collections.defaultdict()
+                        if r_0 not in lf.kg.adj_list[e1_0]:
+                            continue
+                        e1_1s = get_next_outs(lf.kg.adj_list[e1_0], r_0, path[1][1])
+                        if len(e1_1s) == 0:
+                            continue
+                        e1_2s = []
+                        for e1_1 in e1_1s:
+                            outs = get_next_outs(lf.kg.adj_list[e1_1], path[2][0], path[2][1])
+                            e1_2s += outs
+                        if len(e1_2s) == 0:
+                            continue
+                        e1_3s = []
+                        for e1_2 in e1_2s:
+                            outs = get_next_outs(lf.kg.adj_list[e1_2], path[3][0], path[3][1])
+                            e1_3s += outs
+                        if len(e1_3s) == 0:
+                            continue
+                        # type2score = dict(zip())
+
+                        for e1_3 in e1_3s:
+                            real_e3_score.append((e1_3, np.exp(path[-1][1])))
+                    else:
+                        print("ERROR e not on real KG:", e1_0)
+                for e3, p in sorted(real_e3_score, key=lambda d:d[1], reverse=True)[:k]:
+                    score_mat[e3] += p  # TODO:CHECK
+                score_rslts.append(score_mat)
+            score_rslts = np.vstack(score_rslts)  # [nsample, num_entities]
+            return score_rslts
 
         pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
         dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
@@ -390,6 +435,21 @@ def inference(lf):
         eval_metrics['dev']['mrr'] = dev_metrics[4]
         src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.all_objects_abs, verbose=True)
         print('Test set performance(lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+
+        global ABS_ALL_PATH
+        abs_traces = ABS_ALL_PATH  # pickle.load(open(args.abs_path_dir, 'rb'))
+        pred_scores = abs2real_path(abs_traces, dev_data)
+        dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects_abs, verbose=True)
+        eval_metrics['dev_real'] = {}
+        eval_metrics['dev_real']['hits_at_1'] = dev_metrics[0]
+        eval_metrics['dev_real']['hits_at_3'] = dev_metrics[1]
+        eval_metrics['dev_real']['hits_at_5'] = dev_metrics[2]
+        eval_metrics['dev_real']['hits_at_10'] = dev_metrics[3]
+        eval_metrics['dev_real']['mrr'] = dev_metrics[4]
+        src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects_abs, verbose=True)
+        print('Test set performance real (lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+        ABS_ALL_PATH = []
+
         pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
         test_metrics = src.eval.hits_and_ranks(test_data_abs, pred_scores, lf.kg.all_objects_abs,
                                                verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
@@ -399,8 +459,15 @@ def inference(lf):
         eval_metrics['test']['hits_at_10'] = test_metrics[3]
         eval_metrics['test']['mrr'] = test_metrics[4]
 
-
-
+        pred_scores = abs2real_path(ABS_ALL_PATH, test_data)
+        test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects_abs,
+                                               verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
+        eval_metrics['test_real']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test_real']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test_real']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test_real']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test_real']['mrr'] = test_metrics[4]
+        print('Test set performance real (lf.forward abs_graph=True):', eval_metrics)
 
 
     elif args.use_abstract_graph:
@@ -443,6 +510,9 @@ def inference(lf):
             test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
         print('Dev set performance:')
         pred_scores = lf.forward(dev_data, verbose=False)
+        print ("dumping...")
+        open('check_pred_scores.pkl', 'wb').write(pickle.dumps(pred_scores))
+
         dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
         eval_metrics['dev'] = {}
         eval_metrics['dev']['hits_at_1'] = dev_metrics[0]

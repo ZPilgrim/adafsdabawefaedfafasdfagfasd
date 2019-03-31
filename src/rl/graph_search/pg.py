@@ -44,11 +44,13 @@ class PolicyGradient(LFramework):
         self.path_types = dict()
         self.num_path_types = 0
 
+        self.path_types_abs = dict()
+        self.num_path_types_abs = 0
+
     def reward_fun(self, e1, r, e2, pred_e2):
         return (pred_e2 == e2).float()
 
     def loss(self, mini_batch):
-
         def stablize_reward(r):
             r_2D = r.view(-1, self.num_rollouts)
             if self.baseline == 'avg_reward':
@@ -234,7 +236,7 @@ class PolicyGradient(LFramework):
         pred_e2 = path_trace[-1][1]
         pred_e2_abs = path_trace_abs[-1][1]
         self.record_path_trace(path_trace)
-        self.record_path_trace(path_trace_abs)
+        self.record_path_trace_abs(path_trace_abs)
 
         return {
                    'pred_e2': pred_e2,
@@ -487,6 +489,7 @@ class PolicyGradient(LFramework):
             action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
 
             action_prob = ops.batch_lookup(action_dist, idx)
+            print ("===> action_prob_abs:", action_prob_abs.size(), " action_prob:", action_prob.size())
             sample_outcome['action_sample'] = (next_r, next_e)
             sample_outcome_abs['action_sample'] = (next_r_abs, next_e_abs)
             sample_outcome['action_prob'] = action_prob
@@ -557,6 +560,7 @@ class PolicyGradient(LFramework):
             sample_outcome_abs['action_sample'] = action_sample_abs
             sample_outcome['action_prob'] = action_prob
             sample_outcome_abs['action_prob'] = action_prob_abs
+            # print("===>out ")
         else:
             # sample_outcome = sample(db_outcomes[0][0], db_outcomes[0][1])
             # sample_outcome_abs = sample(db_outcomes_abs[0][0], db_outcomes_abs[0][1])
@@ -657,6 +661,27 @@ class PolicyGradient(LFramework):
                     if j == path_trace_mat.shape[1] - 1:
                         path_recorder[e] = 1
                         self.num_path_types += 1
+                    else:
+                        path_recorder[e] = {}
+                else:
+                    if j == path_trace_mat.shape[1] - 1:
+                        path_recorder[e] += 1
+                path_recorder = path_recorder[e]
+
+    def record_path_trace_abs(self, path_trace):
+        path_length = len(path_trace)
+        flattened_path_trace = [x for t in path_trace for x in t]
+        path_trace_mat = torch.cat(flattened_path_trace).reshape(-1, path_length)
+        path_trace_mat = path_trace_mat.data.cpu().numpy()
+
+        for i in range(path_trace_mat.shape[0]):
+            path_recorder = self.path_types_abs
+            for j in range(path_trace_mat.shape[1]):
+                e = path_trace_mat[i, j]
+                if not e in path_recorder:
+                    if j == path_trace_mat.shape[1] - 1:
+                        path_recorder[e] = 1
+                        self.num_path_types_abs += 1
                     else:
                         path_recorder[e] = {}
                 else:
