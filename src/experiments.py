@@ -334,36 +334,6 @@ def inference(lf):
         pred_scores = lf.forward(dev_data, verbose=False)
         seen_queries = data_utils.get_seen_queries(args.data_dir, entity_index_path, relation_index_path)
 
-        from src.rl.graph_search.beam_search import ABS_ALL_PATH
-        #print("read abs_path_dir:", args.abs_path_dir)
-        abs_traces = ABS_ALL_PATH #pickle.load(open(args.abs_path_dir, 'rb'))
-        tot_paths = []
-        for abs_trace in abs_traces:
-            pred_e2s = abs_trace['pred_e2s'][0]
-            pred_e2_scores = abs_trace['pred_e2_scores'][0]
-            search_traces = abs_trace['search_traces']
-            paths = [[] for _ in range(len(search_traces[0][0]))]
-            tree_path = collections.defaultdict()
-            for step in range(len(search_traces)):
-                for _i in range(len(search_traces[step])):
-                    paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
-
-            for _i in range(len(paths)):
-                paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
-                # for r, e in paths[_i]:
-
-
-            tot_paths += paths
-            # one path:  [(r_0, e_0), (r_1, e_1), ...(r_3,e_3), (e_3, prob)]
-        # search path
-        tot_real_path = []
-        for path in tot_paths:
-            tot_real_path.append([])
-            for single in path:
-                pass
-
-
-
         print('Dev set evaluation by seen queries (partial graph)')
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.dev_objects, seen_queries, verbose=True)
@@ -382,6 +352,34 @@ def inference(lf):
         test_data_abs = data_utils.convert_entities2typeids(test_data, entity2typeid)
         print('Dev set performance(lf.forward abs_graph=True):')
         # from src.rl.graph_search.beam_search import ABS_ALL_PATH
+
+        from src.rl.graph_search.beam_search import ABS_ALL_PATH
+        # print("read abs_path_dir:", args.abs_path_dir)
+        abs_traces = ABS_ALL_PATH  # pickle.load(open(args.abs_path_dir, 'rb'))
+        tot_paths = []
+        for abs_trace in abs_traces:
+            pred_e2s = abs_trace['pred_e2s'][0]
+            pred_e2_scores = abs_trace['pred_e2_scores'][0]
+            search_traces = abs_trace['search_traces']
+            paths = [[] for _ in range(len(search_traces[0][0]))]
+            tree_path = collections.defaultdict()
+            for step in range(len(search_traces)):
+                for _i in range(len(search_traces[step])):
+                    paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
+
+            for _i in range(len(paths)):
+                paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
+                # for r, e in paths[_i]:
+
+            tot_paths += paths
+            # one path:  [(r_0, e_0), (r_1, e_1), ...(r_3,e_3), (e_3, prob)]
+        # search path
+        tot_real_path = []
+        for path in tot_paths:
+            tot_real_path.append([])
+            for single in path:
+                pass
+
         pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
         dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
         eval_metrics['dev'] = {}
