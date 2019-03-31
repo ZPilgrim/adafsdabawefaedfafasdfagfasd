@@ -17,6 +17,7 @@ from src.rl.graph_search.pg import PolicyGradient
 import src.utils.ops as ops
 from src.utils.ops import zeros_var_cuda
 
+# LOAD_FLAG = torch.device('cpu')
 
 class RewardShapingPolicyGradient(PolicyGradient):
     def __init__(self, args, kg, pn, fn_kg, fn, fn_secondary_kg=None):
@@ -32,6 +33,8 @@ class RewardShapingPolicyGradient(PolicyGradient):
         fn_model = self.fn_model
         if fn_model in ['conve']:
             fn_state_dict = torch.load(args.conve_state_dict_path)
+            # fn_state_dict = torch.load(args.conve_state_dict_path, map_location=LOAD_FLAG)
+            # print("CHANGE MAP_LOCATION:", LOAD_FLAG)
             fn_nn_state_dict = get_conve_nn_state_dict(fn_state_dict)
             fn_kg_state_dict = get_conve_kg_state_dict(fn_state_dict)
             self.fn.load_state_dict(fn_nn_state_dict)

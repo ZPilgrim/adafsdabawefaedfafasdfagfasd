@@ -15,6 +15,8 @@ import src.rl.graph_search.beam_search as search
 import src.utils.ops as ops
 from src.utils.ops import int_fill_var_cuda, var_cuda, zeros_var_cuda
 
+CHECK_NEXT_E = True
+
 
 class PolicyGradient(LFramework):
     def __init__(self, args, kg, pn):
@@ -44,8 +46,6 @@ class PolicyGradient(LFramework):
 
     def reward_fun(self, e1, r, e2, pred_e2):
         return (pred_e2 == e2).float()
-
-
 
     def loss(self, mini_batch):
 
@@ -205,8 +205,9 @@ class PolicyGradient(LFramework):
             obs_abs = [e_s_abs, q_abs, e_t_abs, t == (num_steps - 1), last_r_abs, seen_nodes_abs]
             db_outcomes, inv_offset, policy_entropy, db_outcomes_abs, inv_offset_abs, policy_entropy_abs = pn.transit_with_abs(
                 e, obs, e_abs, obs_abs, kg, use_action_space_bucketing=self.use_action_space_bucketing)
-            sample_outcome = self.sample_action(db_outcomes, inv_offset)
-            sample_outcome_abs = self.sample_action(db_outcomes_abs, inv_offset_abs)
+
+            sample_outcome, sample_outcome_abs = self.sample_action_with_abs(db_outcomes, db_outcomes_abs, inv_offset,
+                                                                             inv_offset_abs)
             action = sample_outcome['action_sample']
             action_abs = sample_outcome_abs['action_sample']
             pn.update_path(action, kg)  # 这里的Action就是 e, r
@@ -236,18 +237,18 @@ class PolicyGradient(LFramework):
         self.record_path_trace(path_trace_abs)
 
         return {
-            'pred_e2': pred_e2,
-            'log_action_probs': log_action_probs,
-            'action_entropy': action_entropy,
-            'path_trace': path_trace,
-            'path_components': path_components
-        }, {
-            'pred_e2': pred_e2_abs,
-            'log_action_probs': log_action_probs_abs,
-            'action_entropy': action_entropy_abs,
-            'path_trace': path_trace_abs,
-            'path_components': path_components_abs
-        }
+                   'pred_e2': pred_e2,
+                   'log_action_probs': log_action_probs,
+                   'action_entropy': action_entropy,
+                   'path_trace': path_trace,
+                   'path_components': path_components
+               }, {
+                   'pred_e2': pred_e2_abs,
+                   'log_action_probs': log_action_probs_abs,
+                   'action_entropy': action_entropy_abs,
+                   'path_trace': path_trace_abs,
+                   'path_components': path_components_abs
+               }
 
     def loss_with_abs(self, mini_batch):
 
@@ -276,7 +277,7 @@ class PolicyGradient(LFramework):
 
         # Compute discounted reward
         final_reward = self.reward_fun(e1, r, e2, pred_e2)
-        final_reward_abs = final_reward #self.reward_fun(e1_abs, r_abs, e2_abs, pred_e2_abs)
+        final_reward_abs = final_reward  # self.reward_fun(e1_abs, r_abs, e2_abs, pred_e2_abs)
         # final_reward_abs = self.reward_fun(e1_abs, r_abs, e2_abs, pred_e2_abs)
         if self.baseline != 'n/a':
             final_reward = stablize_reward(final_reward)
@@ -286,9 +287,12 @@ class PolicyGradient(LFramework):
         cum_discounted_rewards[-1] = final_reward
         cum_discounted_rewards_abs[-1] = final_reward_abs
         R = 0
+        R_abs = 0
         for i in range(self.num_rollout_steps - 1, -1, -1):
             R = self.gamma * R + cum_discounted_rewards[i]
+            R_abs = self.gamma * R_abs + cum_discounted_rewards_abs[i]
             cum_discounted_rewards[i] = R
+            cum_discounted_rewards_abs[i] = R_abs
 
         # Compute policy gradient
         pg_loss, pt_loss = 0, 0
@@ -339,8 +343,6 @@ class PolicyGradient(LFramework):
                     if int(pred_e2_abs[i]) in self.kg.all_objects_abs[int(e1_abs[i])][int(r_abs[i])]:
                         fn_abs[i] = 1
             loss_dict_abs['fn'] = fn_abs
-
-
 
         return loss_dict, loss_dict_abs
 
@@ -420,6 +422,8 @@ class PolicyGradient(LFramework):
         :return action_prob: Probability of the sampled action.
         """
 
+        global CHECK_NEXT_E
+
         def apply_action_dropout_mask(action_dist, action_mask):
             if self.action_dropout_rate > 0:
                 rand = torch.rand(action_dist.size())
@@ -445,6 +449,50 @@ class PolicyGradient(LFramework):
             sample_outcome['action_prob'] = action_prob
             return sample_outcome
 
+
+        def es2ts(es):
+            ret = []
+            for e in es:
+                ret.append(self.kg.get_typeid(e))
+            print("ret ES===>>", len(set(ret)))
+            ret = var_cuda(torch.LongTensor(ret), requires_grad=False)
+            return ret
+
+        def sample_with_abs(action_space, action_dist, action_space_abs, action_dist_abs):
+            sample_outcome = {}
+            sample_outcome_abs = {}
+            ((r_space, e_space), action_mask) = action_space
+            ((r_space_abs, e_space_abs), action_mask_abs) = action_space_abs
+            sample_action_dist = apply_action_dropout_mask(action_dist, action_mask)
+            idx = torch.multinomial(sample_action_dist, 1, replacement=True)
+            next_r = ops.batch_lookup(r_space, idx)
+            next_e = ops.batch_lookup(e_space, idx)
+
+            next_r_abs = next_r
+            next_e_abs = es2ts(next_e)
+
+            tot_set = set()
+            tot_set_er = set()
+            tot_set_abs_er = set()
+            for e, r in zip(next_r_abs.tolist(), next_e_abs.tolist()):
+                tot_set.add((e,r))
+            for _e, _r in zip(next_r.tolist(), next_e.tolist()):
+                tot_set_abs_er.add((_r, self.kg.get_typeid(_e)))
+                tot_set_er.add((_r,_e))
+            print("SET ES===>>", len(tot_set), "e_space_abs.size():", e_space_abs.size(), "r_space_abs.size():",r_space_abs.size(), "next_r_abs:", next_r_abs.size(), "next_e_abs:", next_e_abs.size(), "e_space.size():", e_space.size(), "tot_set_abs_er:", len(tot_set_abs_er), "tot_set_er:", len(tot_set_er))
+
+            type_mask = (next_e_abs.view(-1, 1) == e_space_abs)
+            r_mask = (next_r_abs.view(-1, 1) == r_space_abs)
+            action_mask_abs = r_mask.mul(type_mask)
+            action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
+
+            action_prob = ops.batch_lookup(action_dist, idx)
+            sample_outcome['action_sample'] = (next_r, next_e)
+            sample_outcome_abs['action_sample'] = (next_r_abs, next_e_abs)
+            sample_outcome['action_prob'] = action_prob
+            sample_outcome_abs['action_prob'] = action_prob_abs
+            return sample_outcome, sample_outcome_abs
+
         if inv_offset is not None:
             next_r_list = []
             next_r_list_abs = []
@@ -454,17 +502,47 @@ class PolicyGradient(LFramework):
             action_dist_list_abs = []
             action_prob_list = []
             action_prob_list_abs = []
-            #TODO:CHECK这里... 尤其上面的sample apply_action_dropout_mask, 这里概率部分是不是有这样的可能，两条path到达同样的抽象实体 所以概率不能合并。。。 主要概率是否影响更新...
+            # TODO:CHECK这里... 尤其上面的sample apply_action_dropout_mask, 这里概率部分是不是有这样的可能，两条path到达同样的抽象实体 所以概率不能合并。。。 主要概率是否影响更新...
             for i, (action_space, action_dist) in enumerate(db_outcomes):
-                sample_outcome = sample(action_space, action_dist)
+                action_space_abs = db_outcomes_abs[i][0]
+                action_dist_abs = db_outcomes_abs[i][1]
+
+                sample_outcome, sample_outcome_abs = sample_with_abs(action_space, action_dist, action_space_abs, action_dist_abs)
                 next_r_list.append(sample_outcome['action_sample'][0])
-                next_r_list_abs.append(self.kg.get_typeid(next_e_list[-1]))
+                next_r_list_abs.append(sample_outcome_abs['action_sample'][0])
+
                 next_e_list.append(sample_outcome['action_sample'][1])
-                next_e_list_abs.append(sample_outcome['action_sample'][1])
+                next_e_list_abs.append(sample_outcome_abs['action_sample'][1])
+                # # if CHECK_NEXT_E:
+                # #     print ("type:", type(next_e_list[-1]), next_e_list[-1])
+                # #     try:
+                # #         print("next_e_list[-1].tolist()", next_e_list[-1].tolist())
+                # #     except Exception as e:
+                # #         print("e:", e)
+                # #
+                # #     CHECK_NEXT_E = False
+                #
+                # type2prob = mk_type2prob_map(action_space_abs, action_dist_abs)
+                #
+                # _real_type_list = []
+                # _abs_type_prob_list = []
+                # for i, _next_e in enumerate(sample_outcome['action_sample'][1]):
+                #     _real_type_list.append(self.kg.get_typeid(_next_e))
+                #     _abs_type_prob_list.append(sample_outcome['action_prob'][i])
+                #
+                # for _e in next_e_list[-1]:
+                #     _real_type_list.append(self.kg.get_typeid(_e))
+                # _real_type_list = var_cuda(torch.LongTensor(_real_type_list),
+                #                            requires_grad=False)
+
+
+                # next_e_list_abs.append(self.kg.get_typeid(next_e_list[-1]))
+
                 action_prob_list.append(sample_outcome['action_prob'])
-                action_prob_list_abs.append(sample_outcome['action_prob'])
+                action_prob_list_abs.append(sample_outcome_abs['action_prob'])
                 action_dist_list.append(action_dist)
-                action_dist_list_abs.append(db_outcomes_abs[i][1])
+                action_dist_list_abs.append(action_dist_abs)  # TODO:CHECK
+
             next_r_abs = torch.cat(next_r_list_abs, dim=0)[inv_offset_abs]
             next_r = torch.cat(next_r_list, dim=0)[inv_offset]
             next_e = torch.cat(next_e_list, dim=0)[inv_offset]
@@ -480,8 +558,13 @@ class PolicyGradient(LFramework):
             sample_outcome['action_prob'] = action_prob
             sample_outcome_abs['action_prob'] = action_prob_abs
         else:
-            sample_outcome = sample(db_outcomes[0][0], db_outcomes[0][1])
-            sample_outcome_abs = sample(db_outcomes_abs[0][0], db_outcomes_abs[0][1])
+            # sample_outcome = sample(db_outcomes[0][0], db_outcomes[0][1])
+            # sample_outcome_abs = sample(db_outcomes_abs[0][0], db_outcomes_abs[0][1])
+            action_space_abs = db_outcomes_abs[0][0]
+            action_dist_abs = db_outcomes_abs[0][1]
+
+            sample_outcome, sample_outcome_abs = sample_with_abs(db_outcomes[0][0], db_outcomes[0][1], action_space_abs,
+                                                                 action_dist_abs)
 
         return sample_outcome, sample_outcome_abs
 
@@ -521,7 +604,7 @@ class PolicyGradient(LFramework):
                     pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
         return pred_scores
 
-    def predict_abs(self, mini_batch, verbose = False):
+    def predict_abs(self, mini_batch, verbose=False):
         # return_merge_scores= None #'sum'
         # return_merge_scores= 'sum'
 
@@ -530,7 +613,9 @@ class PolicyGradient(LFramework):
         e1_abs, e2_abs, r_abs = self.format_batch(mini_batch)
         # _, _, _, e1_abs, e2_abs, r_abs = self.format_batch_with_abs(mini_batch)
         beam_search_output = search.beam_search_abs(
-            pn, e1_abs, r_abs, e2_abs, kg, self.num_rollout_steps, self.beam_size, return_path_components=self.save_paths_to_csv,return_merge_scores=self.return_merge_scores)    #TODO:修改这里走beam_search_abs
+            pn, e1_abs, r_abs, e2_abs, kg, self.num_rollout_steps, self.beam_size,
+            return_path_components=self.save_paths_to_csv,
+            return_merge_scores=self.return_merge_scores)  # TODO:修改这里走beam_search_abs
         pred_e2s = beam_search_output['pred_e2s']
         pred_e2_scores = beam_search_output['pred_e2_scores']
 
@@ -557,7 +642,6 @@ class PolicyGradient(LFramework):
                 else:
                     pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
         return pred_scores
-
 
     def record_path_trace(self, path_trace):
         path_length = len(path_trace)

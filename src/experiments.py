@@ -9,12 +9,14 @@
  Experiment Portal.
 """
 # import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+# os.environ["CUDA_VISIBLE_DEVICES"] = ''
+# print("USE GPU 1,2")
 import copy
 import itertools
 import numpy as np
 import os, sys
 import random
+import collections
 
 import torch
 
@@ -34,7 +36,9 @@ from src.utils.ops import flatten
 import pickle
 
 torch.cuda.set_device(args.gpu)
+# import os
 
+# os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed_all(args.seed)
 
@@ -329,12 +333,78 @@ def inference(lf):
                                            seen_entities=seen_entities)
         pred_scores = lf.forward(dev_data, verbose=False)
         seen_queries = data_utils.get_seen_queries(args.data_dir, entity_index_path, relation_index_path)
+
+        from src.rl.graph_search.beam_search import ABS_ALL_PATH
+        #print("read abs_path_dir:", args.abs_path_dir)
+        abs_traces = ABS_ALL_PATH #pickle.load(open(args.abs_path_dir, 'rb'))
+        tot_paths = []
+        for abs_trace in abs_traces:
+            pred_e2s = abs_trace['pred_e2s'][0]
+            pred_e2_scores = abs_trace['pred_e2_scores'][0]
+            search_traces = abs_trace['search_traces']
+            paths = [[] for _ in range(len(search_traces[0][0]))]
+            tree_path = collections.defaultdict()
+            for step in range(len(search_traces)):
+                for _i in range(len(search_traces[step])):
+                    paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
+
+            for _i in range(len(paths)):
+                paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
+                # for r, e in paths[_i]:
+
+
+            tot_paths += paths
+            # one path:  [(r_0, e_0), (r_1, e_1), ...(r_3,e_3), (e_3, prob)]
+        # search path
+        tot_real_path = []
+        for path in tot_paths:
+            tot_real_path.append([])
+            for single in path:
+                pass
+
+
+
         print('Dev set evaluation by seen queries (partial graph)')
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.dev_objects, seen_queries, verbose=True)
         print('Dev set evaluation by seen queries (full graph)')
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.all_objects, seen_queries, verbose=True)
+    elif args.abs_path_dir:
+        print ("CHECK abs verbose True")
+        dev_path = os.path.join(args.data_dir, 'dev.triples')
+        test_path = os.path.join(args.data_dir, 'test.triples')
+        dev_data = data_utils.load_triples(
+            dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        dev_data_abs = data_utils.convert_entities2typeids(dev_data, entity2typeid)
+        test_data = data_utils.load_triples(
+            test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        test_data_abs = data_utils.convert_entities2typeids(test_data, entity2typeid)
+        print('Dev set performance(lf.forward abs_graph=True):')
+        # from src.rl.graph_search.beam_search import ABS_ALL_PATH
+        pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
+        dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
+        eval_metrics['dev'] = {}
+        eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
+        eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
+        eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
+        eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
+        eval_metrics['dev']['mrr'] = dev_metrics[4]
+        src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.all_objects_abs, verbose=True)
+        print('Test set performance(lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+        pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
+        test_metrics = src.eval.hits_and_ranks(test_data_abs, pred_scores, lf.kg.all_objects_abs,
+                                               verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
+        eval_metrics['test']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test']['mrr'] = test_metrics[4]
+
+
+
+
+
     elif args.use_abstract_graph:
         print ("CHECK abs verbose True")
         dev_path = os.path.join(args.data_dir, 'dev.triples')
@@ -346,6 +416,7 @@ def inference(lf):
             test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
         test_data_abs = data_utils.convert_entities2typeids(test_data, entity2typeid)
         print('Dev set performance(lf.forward abs_graph=True):')
+        # from src.rl.graph_search.beam_search import ABS_ALL_PATH
         pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
         dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
         eval_metrics['dev'] = {}
@@ -462,19 +533,19 @@ def run_ablation_studies(args):
             dev_data, pred_scores, lf.kg.dev_objects, seen_queries, verbose=True)
         mrrs[system] = {
             '': mrr * 100
-            }
+        }
         to_m_mrrs[system] = {
             '': to_m_mrr * 100
-            }
+        }
         to_1_mrrs[system] = {
             '': to_1_mrr * 100
-            }
+        }
         seen_mrrs[system] = {
             '': seen_mrr * 100
-            }
+        }
         unseen_mrrs[system] = {
             '': unseen_mrr * 100
-            }
+        }
         _, _, _, _, mrr_full_kg = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
         if to_1_ratio == 0:
             to_m_mrr_full_kg = mrr_full_kg

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
  Copyright (c) 2018, salesforce.com, inc.
  All rights reserved.
@@ -26,6 +27,21 @@ DUMMY_ENTITY_ID = 0
 NO_OP_ENTITY_ID = 1
 
 
+def build(adj, e2t):
+    ret = collections.defaultdict()
+    for src in adj:
+        src_abs = e2t[src]
+        if src_abs not in ret:
+            ret[src_abs] = collections.defaultdict()
+        for r in adj[src]:
+            if r not in ret[src_abs]:
+                ret[src_abs][r] = set()
+            for v in adj[src][r]:
+                ret[src_abs][r].add(e2t[v])
+
+    return ret
+
+
 def check_answer_ratio(examples):
     entity_dict = {}
     for e1, e2, r in examples:
@@ -36,6 +52,7 @@ def check_answer_ratio(examples):
     for e1 in entity_dict:
         answer_ratio += len(entity_dict[e1])
     return answer_ratio / len(entity_dict)
+
 
 def check_relation_answer_ratio(input_file, kg):
     example_dict = {}
@@ -53,6 +70,7 @@ def check_relation_answer_ratio(input_file, kg):
         r_answer_ratio[r] = check_answer_ratio(example_dict[r])
     return r_answer_ratio
 
+
 def change_to_test_model_path(dataset, model_path):
     model_dir = os.path.dirname(os.path.dirname(model_path))
     model_subdir = os.path.basename(os.path.dirname(model_path))
@@ -61,6 +79,7 @@ def change_to_test_model_path(dataset, model_path):
     new_model_subdir += '-test'
     new_model_path = os.path.join(model_dir, new_model_subdir, file_name)
     return new_model_path
+
 
 def get_train_path(args):
     if 'NELL' in args.data_dir:
@@ -80,6 +99,7 @@ def get_train_path(args):
         train_path = os.path.join(args.data_dir, 'train.triples')
 
     return train_path
+
 
 def load_seen_entities(adj_list_path, entity_index_path):
     _, id2entity = load_index(entity_index_path)
@@ -127,11 +147,12 @@ def load_triples_with_label(data_path, r, entity_index_path, relation_index_path
             if seen_entities and (not e1 in seen_entities or not e2 in seen_entities):
                 num_skipped += 1
                 if verbose:
-                    print('Skip triple ({}) with unseen entity: {}'.format(num_skipped, line.strip())) 
+                    print('Skip triple ({}) with unseen entity: {}'.format(num_skipped, line.strip()))
                 continue
             triples.append(triple2ids(e1, e2, r))
             labels.append(label.strip())
     return triples, labels
+
 
 def load_triples(data_path, entity_index_path, relation_index_path, group_examples_by_query=False,
                  add_reverse_relations=False, seen_entities=None, verbose=False):
@@ -154,7 +175,7 @@ def load_triples(data_path, entity_index_path, relation_index_path, group_exampl
             if seen_entities and (not e1 in seen_entities or not e2 in seen_entities):
                 num_skipped += 1
                 if verbose:
-                    print('Skip triple ({}) with unseen entity: {}'.format(num_skipped, line.strip())) 
+                    print('Skip triple ({}) with unseen entity: {}'.format(num_skipped, line.strip()))
                 continue
             # if r in ['concept:agentbelongstoorganization', 'concept:teamplaysinleague']:
             #     continue
@@ -184,6 +205,7 @@ def load_triples(data_path, entity_index_path, relation_index_path, group_exampl
     print('{} triples loaded from {}'.format(len(triples), data_path))
     return triples
 
+
 def convert_entities2typeids(triples, entity2typeid):
     ret = []
     for e1, e2, rs in triples:
@@ -197,6 +219,7 @@ def convert_entities2typeids(triples, entity2typeid):
 
     return ret
 
+
 def load_entity_hist(input_path):
     entity_hist = {}
     with open(input_path) as f:
@@ -204,6 +227,7 @@ def load_entity_hist(input_path):
             v, f = line.strip().split()
             entity_hist[v] = int(f)
     return entity_hist
+
 
 def load_index(input_path):
     index, rev_index = {}, {}
@@ -213,6 +237,7 @@ def load_index(input_path):
             index[v] = i
             rev_index[i] = v
     return index, rev_index
+
 
 def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mode, add_reverse_relations=True):
     """
@@ -240,7 +265,7 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
             else:
                 return 'numerical'
         else:
-            assert(1==0) #针对其他数据集这里需要重新get type
+            assert (1 == 0)  # 针对其他数据集这里需要重新get type
             return 'entity'
 
     def hist_to_vocab(_dict):
@@ -311,7 +336,7 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
     removed_triples = set(removed_triples)
     adj_list = collections.defaultdict(collections.defaultdict)
     entity2typeid = [0 for i in range(len(entity2id))]
-    entity2typeid[DUMMY_ENTITY_ID] =  DUMMY_ENTITY_ID
+    entity2typeid[DUMMY_ENTITY_ID] = DUMMY_ENTITY_ID
     entity2typeid[NO_OP_ENTITY_ID] = NO_OP_ENTITY_ID
     num_facts = 0
     for line in set(raw_kb_triples + keep_triples):
@@ -352,6 +377,150 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
     with open(os.path.join(data_dir, 'entity2typeid.pkl'), 'wb') as o_f:
         pickle.dump(entity2typeid, o_f)
 
+    print("building abs graph map...")
+    adj_list_abs = build(adj_list, entity2typeid)
+    open(os.path.join(data_dir, 'adj_list_abs.pkl'), 'wb').write(pickle.dumps(adj_list_abs))
+
+
+def prepare_kb_envrioment_with_abs(raw_kb_path, train_path, dev_path, test_path, test_mode, add_reverse_relations=True):
+    """
+    Process KB data which was saved as a set of triples.
+        (a) Remove train and test triples from the KB envrionment.
+        (b) Add reverse triples on demand.
+        (c) Index unique entities and relations appeared in the KB.
+
+    :param raw_kb_path: Path to the raw KB triples.
+    :param train_path: Path to the train set KB triples.
+    :param dev_path: Path to the dev set KB triples.
+    :param test_path: Path to the test set KB triples.
+    :param add_reverse_relations: If set, add reverse triples to the KB environment.
+    """
+    data_dir = os.path.dirname(raw_kb_path)
+
+    def get_type(e_name):
+        if e_name == DUMMY_ENTITY:
+            return DUMMY_ENTITY_ID
+        if e_name == NO_OP_ENTITY:
+            return NO_OP_ENTITY_ID
+        if 'nell-995' in data_dir.lower():
+            if '_' in e_name:
+                return e_name.split('_')[1]
+            else:
+                return 'numerical'
+        else:
+            assert (1 == 0)  # 针对其他数据集这里需要重新get type
+            return 'entity'
+
+    def hist_to_vocab(_dict):
+        return sorted(sorted(_dict.items(), key=lambda x: x[0]), key=lambda x: x[1], reverse=True)
+
+    # Create entity and relation indices
+    entity_hist = collections.defaultdict(int)
+    relation_hist = collections.defaultdict(int)
+    type_hist = collections.defaultdict(int)
+    with open(raw_kb_path) as f:
+        raw_kb_triples = [l.strip() for l in f.readlines()]
+    with open(train_path) as f:
+        train_triples = [l.strip() for l in f.readlines()]
+    with open(dev_path) as f:
+        dev_triples = [l.strip() for l in f.readlines()]
+    with open(test_path) as f:
+        test_triples = [l.strip() for l in f.readlines()]
+
+    if test_mode:
+        keep_triples = train_triples + dev_triples
+        removed_triples = test_triples
+    else:
+        keep_triples = train_triples
+        removed_triples = dev_triples + test_triples
+
+    # Index entities and relations
+    for line in set(raw_kb_triples + keep_triples + removed_triples):
+        e1, e2, r = line.strip().split()
+        entity_hist[e1] += 1
+        entity_hist[e2] += 1
+        if 'nell-995' in data_dir.lower():
+            # 在训练样本中不会出现dummy和no_op，所以不影响
+            t1 = e1.split('_')[1] if '_' in e1 else 'numerical'
+            t2 = e2.split('_')[1] if '_' in e2 else 'numerical'
+        else:
+            t1 = get_type(e1)
+            t2 = get_type(e2)
+        type_hist[t1] += 1
+        type_hist[t2] += 1
+        relation_hist[r] += 1
+        if add_reverse_relations:
+            inv_r = r + '_inv'
+            relation_hist[inv_r] += 1
+    # Save the entity and relation indices sorted by decreasing frequency
+    with open(os.path.join(data_dir, 'entity2id.txt'), 'w') as o_f:
+        o_f.write('{}\t{}\n'.format(DUMMY_ENTITY, DUMMY_ENTITY_ID))
+        o_f.write('{}\t{}\n'.format(NO_OP_ENTITY, NO_OP_ENTITY_ID))
+        for e, freq in hist_to_vocab(entity_hist):
+            o_f.write('{}\t{}\n'.format(e, freq))
+    with open(os.path.join(data_dir, 'relation2id.txt'), 'w') as o_f:
+        o_f.write('{}\t{}\n'.format(DUMMY_RELATION, DUMMY_RELATION_ID))
+        o_f.write('{}\t{}\n'.format(START_RELATION, START_RELATION_ID))
+        o_f.write('{}\t{}\n'.format(NO_OP_RELATION, NO_OP_RELATION_ID))
+        for r, freq in hist_to_vocab(relation_hist):
+            o_f.write('{}\t{}\n'.format(r, freq))
+    with open(os.path.join(data_dir, 'type2id.txt'), 'w') as o_f:
+        o_f.write('{}\t{}\n'.format(DUMMY_ENTITY, DUMMY_ENTITY_ID))
+        o_f.write('{}\t{}\n'.format(NO_OP_ENTITY, NO_OP_ENTITY_ID))
+        for t, freq in hist_to_vocab(type_hist):
+            o_f.write('{}\t{}\n'.format(t, freq))
+    print('{} entities indexed'.format(len(entity_hist)))
+    print('{} relations indexed'.format(len(relation_hist)))
+    print('{} types indexed'.format(len(type_hist)))
+    entity2id, id2entity = load_index(os.path.join(data_dir, 'entity2id.txt'))
+    relation2id, id2relation = load_index(os.path.join(data_dir, 'relation2id.txt'))
+    type2id, id2type = load_index(os.path.join(data_dir, 'type2id.txt'))
+
+    removed_triples = set(removed_triples)
+    adj_list = collections.defaultdict(collections.defaultdict)
+    entity2typeid = [0 for i in range(len(entity2id))]
+    entity2typeid[DUMMY_ENTITY_ID] = DUMMY_ENTITY_ID
+    entity2typeid[NO_OP_ENTITY_ID] = NO_OP_ENTITY_ID
+    num_facts = 0
+    for line in set(raw_kb_triples + keep_triples):
+        e1, e2, r = line.strip().split()
+        triple_signature = '{}\t{}\t{}'.format(e1, e2, r)
+        e1_id = entity2id[e1]
+        e2_id = entity2id[e2]
+        t1 = get_type(e1)
+        t2 = get_type(e2)
+        t1_id = type2id[t1]
+        t2_id = type2id[t2]
+        entity2typeid[e1_id] = t1_id
+        entity2typeid[e2_id] = t2_id
+        if not triple_signature in removed_triples:
+            r_id = relation2id[r]
+            if not r_id in adj_list[e1_id]:
+                adj_list[e1_id][r_id] = set()
+            if e2_id in adj_list[e1_id][r_id]:
+                print('Duplicate fact: {} ({}, {}, {})!'.format(
+                    line.strip(), id2entity[e1_id], id2relation[r_id], id2entity[e2_id]))
+            adj_list[e1_id][r_id].add(e2_id)
+            num_facts += 1
+            if add_reverse_relations:
+                inv_r = r + '_inv'
+                inv_r_id = relation2id[inv_r]
+                if not inv_r_id in adj_list[e2_id]:
+                    adj_list[e2_id][inv_r_id] = set([])
+                if e1_id in adj_list[e2_id][inv_r_id]:
+                    print('Duplicate fact: {} ({}, {}, {})!'.format(
+                        line.strip(), id2entity[e2_id], id2relation[inv_r_id], id2entity[e1_id]))
+                adj_list[e2_id][inv_r_id].add(e1_id)
+                num_facts += 1
+    print('{} facts processed'.format(num_facts))
+    # Save adjacency list
+    adj_list_path = os.path.join(data_dir, 'adj_list.pkl')
+    with open(adj_list_path, 'wb') as o_f:
+        pickle.dump(dict(adj_list), o_f)
+    with open(os.path.join(data_dir, 'entity2typeid.pkl'), 'wb') as o_f:
+        pickle.dump(entity2typeid, o_f)
+
+
 def get_seen_queries(data_dir, entity_index_path, relation_index_path):
     entity2id, _ = load_index(entity_index_path)
     relation2id, _ = load_index(relation_index_path)
@@ -384,6 +553,7 @@ def get_seen_queries(data_dir, entity_index_path, relation_index_path):
     print('Unseen examples: {}/{} {}'.format(num_unseen_exps, num_exps, unseen_ratio))
 
     return seen_queries, (seen_ratio, unseen_ratio)
+
 
 def get_relations_by_type(data_dir, relation_index_path):
     with open(os.path.join(data_dir, 'raw.kb')) as f:
@@ -447,6 +617,7 @@ def get_relations_by_type(data_dir, relation_index_path):
     print('to-1 examples: {}/{} ({})'.format(num_to_1_exps, num_exps, to_1_ratio))
 
     return to_M_rels, to_1_rels, (to_M_ratio, to_1_ratio)
+
 
 def load_configs(args, config_path):
     with open(config_path) as f:

@@ -211,6 +211,14 @@ class GraphSearchPolicy(nn.Module):
             # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
             return action_dist, ops.entropy(action_dist)
 
+        def policy_nn_fun_abs(X2, action_space):
+            (r_space, e_space), action_mask = action_space
+            A = self.get_action_embedding_abs((r_space, e_space), kg)
+            action_dist = F.softmax(
+                torch.squeeze(A @ torch.unsqueeze(X2, 2), 2) - (1 - action_mask) * ops.HUGE_INT, dim=-1)
+            # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
+            return action_dist, ops.entropy(action_dist)
+
         def pad_and_cat_action_space(action_spaces, inv_offset):
             db_r_space, db_e_space, db_action_mask = [], [], []
             for (r_space, e_space), action_mask in action_spaces:
@@ -233,7 +241,7 @@ class GraphSearchPolicy(nn.Module):
             db_action_spaces, db_references = self.get_action_space_in_buckets_on_abs(e, obs, kg)
             for action_space_b, reference_b in zip(db_action_spaces, db_references):
                 X2_b = X2[reference_b, :]
-                action_dist_b, entropy_b = policy_nn_fun(X2_b, action_space_b)
+                action_dist_b, entropy_b = policy_nn_fun_abs(X2_b, action_space_b)
                 references.extend(reference_b)
                 db_outcomes.append((action_space_b, action_dist_b))
                 entropy_list.append(entropy_b)
@@ -331,6 +339,14 @@ class GraphSearchPolicy(nn.Module):
             # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
             return action_dist, ops.entropy(action_dist)
 
+        def policy_nn_fun_abs(X2, action_space):
+            (r_space, e_space), action_mask = action_space
+            A = self.get_action_embedding_abs((r_space, e_space), kg)
+            action_dist = F.softmax(
+                torch.squeeze(A @ torch.unsqueeze(X2, 2), 2) - (1 - action_mask) * ops.HUGE_INT, dim=-1)
+            # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
+            return action_dist, ops.entropy(action_dist)
+
         def pad_and_cat_action_space(action_spaces, inv_offset):
             db_r_space, db_e_space, db_action_mask = [], [], []
             for (r_space, e_space), action_mask in action_spaces:
@@ -353,8 +369,11 @@ class GraphSearchPolicy(nn.Module):
             entropy_list_abs = []
             references = []
             references_abs = []
+            print ("in shape:", e.size(), e_abs.size())
             db_action_spaces, db_references, db_action_spaces_abs, db_references_abs = self.get_action_space_in_buckets_with_abs(
                 e, obs, e_abs, obs_abs, kg)
+
+            print("dba dbr dbaa dbar:", db_action_spaces[0][0][0].size(), db_action_spaces_abs[0][0][0].size())
             for action_space_b, reference_b in zip(db_action_spaces, db_references):
                 X2_b = X2[reference_b, :]
                 action_dist_b, entropy_b = policy_nn_fun(X2_b, action_space_b)
@@ -363,7 +382,7 @@ class GraphSearchPolicy(nn.Module):
                 entropy_list.append(entropy_b)
             for action_space_b_abs, reference_b_abs in zip(db_action_spaces_abs, db_references_abs):
                 X2_b_abs = X2_abs[reference_b_abs, :]
-                action_dist_b_abs, entropy_b_abs = policy_nn_fun(X2_b_abs, action_space_b_abs)
+                action_dist_b_abs, entropy_b_abs = policy_nn_fun_abs(X2_b_abs, action_space_b_abs)
                 references_abs.extend(reference_b_abs)
                 db_outcomes_abs.append((action_space_b_abs, action_dist_b_abs))
                 entropy_list_abs.append(entropy_b_abs)
@@ -388,14 +407,18 @@ class GraphSearchPolicy(nn.Module):
                 inv_offset = None
                 inv_offset_abs = None
         else:
-            raise NotImplementedError
-            # TODO:这里get_action_space太深了 先不写了
+            # raise NotImplementedError
             action_space = self.get_action_space(e, obs, kg)
-            # action_space_abs = self.get_action_space(e_abs, obs_abs, kg)
             action_dist, entropy = policy_nn_fun(X2, action_space)
-            db_outcomes = [(action_space, action_dist)]
-            inv_offset = None
 
+            action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
+            action_dist_abs, entropy_abs = policy_nn_fun(X2_abs, action_space_abs)
+            db_outcomes = [(action_space, action_dist)]
+            db_outcomes_abs = [(action_space_abs, action_dist_abs)]
+            inv_offset = None
+            inv_offset_abs = None
+
+        print ("+++>>>db_outcomes db_outcomes_abs:", len(db_outcomes), len(db_outcomes_abs))
         return db_outcomes, inv_offset, entropy, db_outcomes_abs, inv_offset_abs, entropy_abs
 
     def initialize_path(self, init_action, kg):
@@ -689,6 +712,8 @@ class GraphSearchPolicy(nn.Module):
             key1_abs = entityabs2bucketid[:, 0]
             key2 = entity2bucketid[:, 1]
             key2_abs = entityabs2bucketid[:, 1]
+
+
             batch_ref = {}
             batch_ref_abs = {}
             for i in range(len(e)):
@@ -706,8 +731,10 @@ class GraphSearchPolicy(nn.Module):
                     batch_ref_abs[key_abs] = []
                 batch_ref_abs[key_abs].append(i)
 
+            print("++++>bucket_size:", len(key1), "abs bucket_size:", len(key1_abs), "bucket_ref:", len(batch_ref), "batch_ref_abs:", len(batch_ref_abs))
+
             for key in batch_ref:
-                action_space = kg.action_space_buckets[key]
+                action_space = kg.action_space_buckets[key]  # 从key的所有出边(r, e2)构成action_space
                 # l_batch_refs: ids of the examples in the current batch of examples
                 # g_bucket_ids: ids of the examples in the corresponding KG action space bucket
                 l_batch_refs = batch_ref[key]
@@ -913,14 +940,14 @@ class GraphSearchPolicy(nn.Module):
         self.W2Dropout_abstract = nn.Dropout(p=self.ff_dropout_rate)
         if self.relation_only_in_path:
             self.path_abs_encoder = nn.LSTM(input_size=self.relation_dim,
-                                                 hidden_size=self.history_dim,
-                                                 num_layers=self.history_num_layers,
-                                                 batch_first=True)
+                                            hidden_size=self.history_dim,
+                                            num_layers=self.history_num_layers,
+                                            batch_first=True)
         else:
             self.path_abs_encoder = nn.LSTM(input_size=self.action_dim,
-                                                 hidden_size=self.history_dim,
-                                                 num_layers=self.history_num_layers,
-                                                 batch_first=True)
+                                            hidden_size=self.history_dim,
+                                            num_layers=self.history_num_layers,
+                                            batch_first=True)
 
     def initialize_modules(self):
         if self.xavier_initialization:
