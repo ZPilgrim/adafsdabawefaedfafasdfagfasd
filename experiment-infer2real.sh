@@ -17,9 +17,9 @@ if [[ $relation_only = *"True"* ]]; then
     relation_only_flag="--relation_only"
 fi
 use_action_space_bucketing_flag=''
-#if [[ $use_action_space_bucketing = *"True"* ]]; then
-#    use_action_space_bucketing_flag='--use_action_space_bucketing'
-#fi
+if [[ $use_action_space_bucketing = *"True"* ]]; then
+    use_action_space_bucketing_flag='--use_action_space_bucketing'
+fi
 
 cmd="python3 -m src.experiments \
     --data_dir $data_dir \
@@ -37,9 +37,9 @@ cmd="python3 -m src.experiments \
     --num_wait_epochs $num_wait_epochs \
     --num_peek_epochs $num_peek_epochs \
     --batch_size 1 \
-    --use_abstract_graph True \
     --train_batch_size $train_batch_size \
-    --dev_batch_size $dev_batch_size \
+    --dev_batch_size 1 \
+    --use_abstract_graph True \
     --margin $margin \
     --learning_rate $learning_rate \
     --baseline $baseline \
@@ -51,7 +51,6 @@ cmd="python3 -m src.experiments \
     $relation_only_flag \
     --beta $beta \
     --beam_size $beam_size \
-    --abs2real_infer True \
     --num_paths_per_entity $num_paths_per_entity \
     $group_examples_by_query_flag \
     $use_action_space_bucketing_flag \

@@ -266,6 +266,7 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
     """
     assert (num_steps >= 1)
     batch_size = len(e_s)
+    # print("===>BEAMSEARCH BATCH SIZE:", batch_size)
 
     def top_k_action(log_action_dist, action_space, return_merge_scores=None):
         """
@@ -323,6 +324,14 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
             log_action_prob, action_ind = torch.topk(log_action_dist, k)
             next_r = ops.batch_lookup(r_space.view(batch_size, -1), action_ind).view(-1)
             next_e = ops.batch_lookup(e_space.view(batch_size, -1), action_ind).view(-1)
+
+            #TODO:CHECK DEBUG 2 DEL
+            for e in next_e:
+                e = int(e)
+                if e not in kg.id2type:
+                    print("ERROR e not in kg.id2type:", e)
+
+
 
         # [batch_size, k] => [batch_size*k]
         log_action_prob = log_action_prob.view(-1)
@@ -382,6 +391,14 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
             action_offset_list.append(top_unique_action_offset.unsqueeze(0))
         next_r = ops.pad_and_cat(next_r_list, padding_value=kg.dummy_r).view(-1)
         next_e = ops.pad_and_cat(next_e_list, padding_value=kg.dummy_e).view(-1)
+
+        # TODO:CHECK DEBUG 2 DEL
+        for e in next_e:
+            e = int(e)
+            if e not in kg.id2type:
+                print("ERROR IN top_k_answer_unique e not in kg.id2type:", e)
+
+
         log_action_prob = ops.pad_and_cat(log_action_prob_list, padding_value=-ops.HUGE_INT)
         action_offset = ops.pad_and_cat(action_offset_list, padding_value=-1)
         return (next_r, next_e), log_action_prob.view(-1), action_offset.view(-1)
@@ -391,6 +408,12 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
             new_r = r[action_offset]
             new_e = e[action_offset]
             search_trace[i] = (new_r, new_e)
+
+            for e in new_e:
+                e = int(e)
+                if e not in kg.id2type:
+                    print("ERROR IN adjust_search_trace e not in kg.id2type:", e)
+
 
     # Initialization
     r_s = int_fill_var_cuda(e_s.size(), kg.dummy_start_r)  # WHY 最初为啥要空关系
@@ -467,19 +490,23 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
                 for j in range(min(output_beam_size, path_width)):
                     ind = i * output_beam_size + j
                     r = kg.id2relation[int(search_trace[k + 1][0][ind])]
-                    e = kg.id2type[int(search_trace[k + 1][1][ind])]
+                    _idx = int(search_trace[k + 1][1][ind])
+                    e = kg.id2type[_idx]
                     if r.endswith('_inv'):
                         edge_label = '<-{}-{} {}'.format(r[:-4], e, float(log_action_probs[k][ind]))
                     else:
                         edge_label = '-{}->{} {}'.format(r, e, float(log_action_probs[k][ind]))
                     top_k_edge_labels.append(edge_label)
                 top_k_action_prob = log_action_prob[:path_width]
-                e_name = kg.id2type[int(search_trace[1][0][i * output_beam_size])] if k == 0 else ''
+                _idx = int(search_trace[1][0][i * output_beam_size])
+                if _idx not in kg.id2type:
+                    print ("+++return_path_components, _idx, i, output_beam_size path_width:", _idx, i, output_beam_size, path_width)
+                e_name = kg.id2type[_idx] if k == 0 else ''
                 p_c.append((e_name, top_k_edge_labels, var_to_numpy(top_k_action_prob)))
             path_components_list.append(p_c)
         beam_search_output['search_traces'] = search_trace
         ABS_ALL_PATH.append(beam_search_output)
-        print("dumping...")
+        # print("dumping...")
         # open('use_abs_graph_{}_save_path.json', 'w').write(json.dumps(beam_search_output))
         pickle.dump(beam_search_output,
                     open('use_abs_graph_{}_save_path_idx_{}.pkl'.format(kg.use_abstract_graph, len(ABS_ALL_PATH)-1),

@@ -14,10 +14,11 @@
 import copy
 import itertools
 import numpy as np
+import numpy as np
 import os, sys
 import random
 import collections
-
+import numpy as np
 import torch
 
 from src.parse_args import parser
@@ -32,7 +33,7 @@ from src.emb.emb import EmbeddingBasedMethod
 from src.rl.graph_search.pn import GraphSearchPolicy
 from src.rl.graph_search.pg import PolicyGradient
 from src.rl.graph_search.rs_pg import RewardShapingPolicyGradient
-from src.utils.ops import flatten
+from src.utils.ops import flatten, zeros_var_cuda
 import pickle
 
 torch.cuda.set_device(args.gpu)
@@ -310,7 +311,7 @@ def inference(lf):
             pred_scores = lf.forward(test_data, verbose=False)
             mp = src.eval.link_MAP(test_data, pred_scores, labels, lf.kg.all_objects, verbose=True)
             mps.append(mp)
-        import numpy as np
+
         map_ = np.mean(mps)
         print('Overall MAP = {}'.format(map_))
         eval_metrics['test']['avg_map'] = map
@@ -369,29 +370,29 @@ def inference(lf):
                 pred_e2s = abs_trace['pred_e2s'][0]
                 pred_e2_scores = abs_trace['pred_e2_scores'][0]
                 search_traces = abs_trace['search_traces']
-                paths = [[] for _ in range(len(search_traces[0][0]))]
+                paths = [[] for _ in range(len(search_traces[0][0]))]#一个样本所有roll_out出来的path,假设128
 
                 for step in range(len(search_traces)):
-                    for _i in range(len(search_traces[step])):
-                        paths[_i].append((search_traces[step][_i][0], search_traces[step][_i][1]))
+                    for _i in range(len(search_traces[step][0])):
+                        paths[_i].append((search_traces[step][0][_i], search_traces[step][1][_i]))
 
                 for _i in range(len(paths)):
                     paths[_i].append((pred_e2s[_i], pred_e2_scores[_i]))
 
                 tot_paths.append(paths)  # 认为对应一条样本
                 # one path:  [(r_0, e_0), (r_1, e_1), (r_2, e_2), (r_3,e_3), (e_3, prob)]
+            print("paths[-1]:", paths[-1])
             # search path
             score_rslts = []
             for i, paths in enumerate(tot_paths):  # paths代表真实一个样本
                 tree_path = collections.defaultdict()
                 e1_0, e2, r_0 = data[i]  # [e1,e2, r]已经是id了 这里假设e2不是list
-                # tot_real_path.append([])
 
-                score_mat = np.zeros([1, lf.kg.num_entities], dtype=np.float32)
+                score_mat = zeros_var_cuda([1, lf.kg.num_entities])
                 real_e3_score = []
                 for path in paths:  # 一条样本的一个path
                     if lf.kg.get_typeid(e1_0) != path[0][1]:
-                        print(" ERROR e1 != path[0][1]:", e1_0, path[0][1], " idx:", i)
+                        print(" ERROR e1 != path[0][1]:", e1_0, path[0], " idx:", i)
                         continue
                     if e1_0 in lf.kg.adj_list:
                         tree_path[e1_0] = collections.defaultdict()
@@ -419,34 +420,41 @@ def inference(lf):
                     else:
                         print("ERROR e not on real KG:", e1_0)
                 for e3, p in sorted(real_e3_score, key=lambda d:d[1], reverse=True)[:k]:
-                    score_mat[e3] += p  # TODO:CHECK
+                    score_mat[0, e3] += p  # TODO:CHECK
                 score_rslts.append(score_mat)
-            score_rslts = np.vstack(score_rslts)  # [nsample, num_entities]
+            score_rslts = torch.cat(score_rslts)  # [nsample, num_entities]
             return score_rslts
 
-        pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
-        dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
-        eval_metrics['dev'] = {}
-        eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
-        eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
-        eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
-        eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
-        eval_metrics['dev']['mrr'] = dev_metrics[4]
-        src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.all_objects_abs, verbose=True)
-        print('Test set performance(lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
-
         global ABS_ALL_PATH
-        abs_traces = ABS_ALL_PATH  # pickle.load(open(args.abs_path_dir, 'rb'))
-        pred_scores = abs2real_path(abs_traces, dev_data)
-        dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects_abs, verbose=True)
+        CHECK = True
+        if not CHECK:
+            pred_scores = lf.forward(dev_data_abs, abs_graph=True, verbose=False)
+            dev_metrics = src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.dev_objects_abs, verbose=True)
+            eval_metrics['dev'] = {}
+            eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
+            eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
+            eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
+            eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
+            eval_metrics['dev']['mrr'] = dev_metrics[4]
+            src.eval.hits_and_ranks(dev_data_abs, pred_scores, lf.kg.all_objects_abs, verbose=True)
+            print('Dev set performance(lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+            abs_traces = ABS_ALL_PATH
+        else:
+            abs_traces = pickle.load(open('path2check_0.pkl', 'rb'))
+            abs_traces = [abs_traces,] #因为现在是一个样本一个Batch...
+            dev_data = [dev_data[0],]
+        print("ALL PATH CNT:", len(abs_traces), len(dev_data))
+        pred_scores = abs2real_path(abs_traces, dev_data)#TODO:CHECK下面是不是lf.kg.all_objects_abs
+        print("====> abs2real_path pred_scores shape:", pred_scores.shape)
+        dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
         eval_metrics['dev_real'] = {}
         eval_metrics['dev_real']['hits_at_1'] = dev_metrics[0]
         eval_metrics['dev_real']['hits_at_3'] = dev_metrics[1]
         eval_metrics['dev_real']['hits_at_5'] = dev_metrics[2]
         eval_metrics['dev_real']['hits_at_10'] = dev_metrics[3]
         eval_metrics['dev_real']['mrr'] = dev_metrics[4]
-        src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects_abs, verbose=True)
-        print('Test set performance real (lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+        src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
+        print('Dev set performance real (lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
         ABS_ALL_PATH = []
 
         pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
@@ -459,7 +467,7 @@ def inference(lf):
         eval_metrics['test']['mrr'] = test_metrics[4]
 
         pred_scores = abs2real_path(ABS_ALL_PATH, test_data)
-        test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects_abs,
+        test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects,
                                                verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
         eval_metrics['test_real']['hits_at_1'] = test_metrics[0]
         eval_metrics['test_real']['hits_at_3'] = test_metrics[1]

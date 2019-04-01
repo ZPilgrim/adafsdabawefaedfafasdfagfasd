@@ -35,7 +35,7 @@ def hits_and_ranks(examples, scores, all_answers, verbose=False):
         scores[i, e2] = target_score
     
     # sort and rank
-    top_k_scores, top_k_targets = torch.topk(scores, min(scores.size(1), args.beam_size))
+    top_k_scores, top_k_targets = torch.topk(scores, min(scores, args.beam_size))
     top_k_targets = top_k_targets.cpu().numpy()
 
     hits_at_1 = 0
@@ -91,6 +91,7 @@ def hits_and_ranks_merge(examples, scores, all_answers, verbose=False):
         scores[i, e2] = target_score
 
     # sort and rank
+    print("+++++++>> min(scores.size(1), args.beam_size:",   scores.size(1), args.beam_size, scores)
     top_k_scores, top_k_targets = torch.topk(scores, min(scores.size(1), args.beam_size))
     top_k_targets = top_k_targets.cpu().numpy()
 

@@ -271,6 +271,8 @@ def convert_entities2typeids(triples, entity2typeid):
             es = [entity2typeid[_] for _ in e2]
         else:
             es = entity2typeid[e2]
+        # if entity2typeid[e1] > 270 or entity2typeid[e2] > 270:
+        #     print("ERROR etype:", e1, e2, entity2typeid[e1], entity2typeid[e2])
         ret.append(
             (entity2typeid[e1], es, rs)
         )

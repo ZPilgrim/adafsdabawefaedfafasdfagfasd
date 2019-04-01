@@ -355,8 +355,10 @@ class LFramework(nn.Module):
             mini_batch = examples[example_id:example_id + self.batch_size]
             mini_batch_size = len(mini_batch)
             if len(mini_batch) < self.batch_size:
+
                 self.make_full_batch(mini_batch, self.batch_size)
             if self.use_abstract_graph and abs_graph:
+                # print("==>forward batch_size infer:", self.batch_size)
                 pred_score = self.predict_abs(mini_batch, verbose=verbose)
             else:
                 pred_score = self.predict(mini_batch, verbose=verbose)
