@@ -340,7 +340,7 @@ def inference(lf):
         print('Dev set evaluation by seen queries (full graph)')
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.all_objects, seen_queries, verbose=True)
-    elif args.abs_path_dir:
+    elif args.abs2real_infer:
         print ("CHECK abs verbose True")
         dev_path = os.path.join(args.data_dir, 'dev.triples')
         test_path = os.path.join(args.data_dir, 'test.triples')
@@ -381,7 +381,6 @@ def inference(lf):
                 tot_paths.append(paths)  # 认为对应一条样本
                 # one path:  [(r_0, e_0), (r_1, e_1), (r_2, e_2), (r_3,e_3), (e_3, prob)]
             # search path
-            tot_real_path = []
             score_rslts = []
             for i, paths in enumerate(tot_paths):  # paths代表真实一个样本
                 tree_path = collections.defaultdict()

@@ -56,6 +56,7 @@ parser.add_argument('--model', type=str, default='point',
                     help='knowledge graph QA model (default: point)')
 parser.add_argument('--entity_dim', type=int, default=200, metavar='E',
                     help='entity embedding dimension (default: 200)')
+parser.add_argument('--abs2real_infer', type=bool, default=False, help='if infer from abs2real')
 parser.add_argument('--relation_dim', type=int, default=200, metavar='R',
                     help='relation embedding dimension (default: 200)')
 parser.add_argument('--history_dim', type=int, default=400, metavar='H',
