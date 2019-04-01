@@ -192,7 +192,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
         obs = [e_s, q, e_t, t == (num_steps - 1), last_r, seen_nodes]
         # one step forward in search
         db_outcomes, _, _ = pn.transit(
-            e, obs, kg, use_action_space_bucketing=True,
+            e, obs, kg, use_action_space_bucketing=False,
             merge_aspace_batching_outcome=True)  # TODO:细跟一下里面的get_action_space_in_buckets
         action_space, action_dist = db_outcomes[0]
         # => [batch_size*k, action_space_size]

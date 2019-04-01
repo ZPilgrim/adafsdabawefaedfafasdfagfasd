@@ -500,7 +500,7 @@ class PolicyGradient(LFramework):
             #             # print("next_r_abs")
             #             # print(next_r_abs[_]
             #             for i in range(len(e_space_abs[_, :])):
-            #                 print("{},{}==>{}{}".format(r_space[_,i], e_space[_,i], r_space_abs[_,i], e_space_abs[_, i]))
+            #                 print("{},{}==>{},{}".format(r_space[_,i], e_space[_,i], r_space_abs[_,i], e_space_abs[_, i]))
             #             assert(1==0)
         
             action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
