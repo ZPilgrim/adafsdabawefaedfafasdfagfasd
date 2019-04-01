@@ -21,7 +21,7 @@ from src.utils.ops import zeros_var_cuda
 
 class RewardShapingPolicyGradient(PolicyGradient):
     def __init__(self, args, kg, pn, fn_kg, fn, fn_secondary_kg=None):
-        super(RewardShapingPolicyGradient, self).__init__(args, fn_kg, pn)
+        super(RewardShapingPolicyGradient, self).__init__(args, kg, pn)
         # super(RewardShapingPolicyGradient, self).__init__(args, kg, pn)
         self.reward_shaping_threshold = args.reward_shaping_threshold
 
