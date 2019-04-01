@@ -206,7 +206,7 @@ class GraphSearchPolicy(nn.Module):
 
         def policy_nn_fun(X2, action_space):
             (r_space, e_space), action_mask = action_space
-            A = self.get_action_embedding((r_space, e_space), kg)
+            A = self.get_action_embedding_abs((r_space, e_space), kg)
             action_dist = F.softmax(
                 torch.squeeze(A @ torch.unsqueeze(X2, 2), 2) - (1 - action_mask) * ops.HUGE_INT, dim=-1)
             # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
@@ -412,31 +412,33 @@ class GraphSearchPolicy(nn.Module):
             action_space = self.get_action_space(e, obs, kg)
             action_dist, entropy = policy_nn_fun(X2, action_space)
             
-            # action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
-            action_space_abs = self.generate_action_space_abs(action_space, e_abs, obs_abs, kg)
+            #action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
+            #action_space_abs = self.get_action_space_abs(e_abs, obs_abs, kg)
+            #action_space_abs = self.generate_action_space_abs(action_space, e_abs, obs_abs, kg)
+            action_space_abs = self.get_action_space_e2t(e, obs_abs, kg)
             action_dist_abs, entropy_abs = policy_nn_fun_abs(X2_abs, action_space_abs)
             db_outcomes = [(action_space, action_dist)]
             db_outcomes_abs = [(action_space_abs, action_dist_abs)]
             inv_offset = None
             inv_offset_abs = None
 
-        print ("+++>>>db_outcomes db_outcomes_abs:", len(db_outcomes), len(db_outcomes_abs))
+        #print ("+++>>>db_outcomes db_outcomes_abs:", len(db_outcomes), len(db_outcomes_abs))
         return db_outcomes, inv_offset, entropy, db_outcomes_abs, inv_offset_abs, entropy_abs
     
     def generate_action_space_abs(self, action_space, e_abs, obs_abs, kg):
-        def emat2tmat(es):
-            ret = []
-            # print(es)
-            # print(es.size())
-            for _ in range(es.size()[0]):
-                for e in es[_]:
-                    ret.append(self.kg.get_typeid(e))
-            ret = np.array(ret)
+        # def emat2tmat(es):
+        #     ret = []
+        #     # print(es)
+        #     # print(es.size())
+        #     for _ in range(es.size()[0]):
+        #         for e in es[_]:
+        #             ret.append(self.kg.get_typeid(e))
+        #     ret = np.array(ret)
             
-            #print("ret {} e_space===>>{} type_space".format(len(es), len(set(ret))) )
-            ret = var_cuda(torch.LongTensor(ret), requires_grad=False)
-            ret = ret.view(es.size()[0], es.size()[1])
-            return ret
+        #     #print("ret {} e_space===>>{} type_space".format(len(es), len(set(ret))) )
+        #     ret = var_cuda(torch.LongTensor(ret), requires_grad=False)
+        #     ret = ret.view(es.size()[0], es.size()[1])
+        #     return ret
 
         def filter_overlapping(r_space, type_space, action_mask):
             print("len of r_space", len(r_space))
@@ -491,7 +493,7 @@ class GraphSearchPolicy(nn.Module):
         
         (r_space, e_space), action_mask = action_space
         print(e_space)
-        type_space = emat2tmat(e_space)
+        type_space = self.kg.get_type_mat(e_space)
         print(type_space)
         filter_r_space, filter_type_space, filter_action_mask = filter_overlapping(
             r_space, type_space, action_mask)
@@ -862,6 +864,12 @@ class GraphSearchPolicy(nn.Module):
     def get_action_space_abs(self, e, obs, kg):
         r_space, e_space = kg.action_space_abs[0][0][e], kg.action_space_abs[0][1][e]
         action_mask = kg.action_space_abs[1][e]
+        action_space = ((r_space, e_space), action_mask)
+        return self.apply_action_masks(action_space, e, obs, kg)
+
+    def get_action_space_e2t(self, e, obs, kg):
+        r_space, e_space = kg.action_space_e2t[0][0][e], kg.action_space_e2t[0][1][e]
+        action_mask = kg.action_space_e2t[1][e]
         action_space = ((r_space, e_space), action_mask)
         return self.apply_action_masks(action_space, e, obs, kg)
 

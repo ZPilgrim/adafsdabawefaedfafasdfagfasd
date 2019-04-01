@@ -49,7 +49,7 @@ def process_data():
     train_path = data_utils.get_train_path(args)
     dev_path = os.path.join(data_dir, 'dev.triples')
     test_path = os.path.join(data_dir, 'test.triples')
-    data_utils.prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, args.test,
+    data_utils.prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, args.test, args.bandwidth,
                                      args.add_reverse_relations)
 
 

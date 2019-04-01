@@ -456,7 +456,7 @@ class PolicyGradient(LFramework):
             ret = []
             for e in es:
                 ret.append(self.kg.get_typeid(e))
-            print("ret ES===>>", len(set(ret)))
+            #print("ret ES===>>", len(set(ret)))
             ret = var_cuda(torch.LongTensor(ret), requires_grad=False)
             return ret
 
@@ -465,6 +465,7 @@ class PolicyGradient(LFramework):
             sample_outcome_abs = {}
             ((r_space, e_space), action_mask) = action_space
             ((r_space_abs, e_space_abs), action_mask_abs) = action_space_abs
+
             sample_action_dist = apply_action_dropout_mask(action_dist, action_mask)
             idx = torch.multinomial(sample_action_dist, 1, replacement=True)
             next_r = ops.batch_lookup(r_space, idx)
@@ -473,23 +474,40 @@ class PolicyGradient(LFramework):
             next_r_abs = next_r
             next_e_abs = es2ts(next_e)
 
-            tot_set = set()
-            tot_set_er = set()
-            tot_set_abs_er = set()
-            for e, r in zip(next_r_abs.tolist(), next_e_abs.tolist()):
-                tot_set.add((e,r))
-            for _e, _r in zip(next_r.tolist(), next_e.tolist()):
-                tot_set_abs_er.add((_r, self.kg.get_typeid(_e)))
-                tot_set_er.add((_r,_e))
-            print("SET ES===>>", len(tot_set), "e_space_abs.size():", e_space_abs.size(), "r_space_abs.size():",r_space_abs.size(), "next_r_abs:", next_r_abs.size(), "next_e_abs:", next_e_abs.size(), "e_space.size():", e_space.size(), "tot_set_abs_er:", len(tot_set_abs_er), "tot_set_er:", len(tot_set_er))
+            # tot_set = set()
+            # tot_set_er = set()
+            # tot_set_abs_er = set()
+            # for e, r in zip(next_r_abs.tolist(), next_e_abs.tolist()):
+            #     tot_set.add((e,r))
+            # for _e, _r in zip(next_r.tolist(), next_e.tolist()):
+            #     tot_set_abs_er.add((_r, self.kg.get_typeid(_e)))
+            #     tot_set_er.add((_r,_e))
+            # print("SET ES===>>", len(tot_set), "e_space_abs.size():", e_space_abs.size(), "r_space_abs.size():",r_space_abs.size(), "next_r_abs:", next_r_abs.size(), "next_e_abs:", next_e_abs.size(), "e_space.size():", e_space.size(), "tot_set_abs_er:", len(tot_set_abs_er), "tot_set_er:", len(tot_set_er))
 
             type_mask = (next_e_abs.view(-1, 1) == e_space_abs)
             r_mask = (next_r_abs.view(-1, 1) == r_space_abs)
             action_mask_abs = r_mask.mul(type_mask)
+            # if (action_mask_abs == 1).nonzero().size()[0] != next_e_abs.size()[0]:
+            #     print("----------------------------GETERROR-------------------------------")
+            #     for _ in range(r_space.size()[0]):
+            #         if torch.sum(action_mask_abs[_, :]) == 0:
+            #             # print("r_space_abs")
+            #             # print(r_space_abs[_, :])
+            #             # print("e_space_abs")
+            #             # print(e_space_abs[_, :])
+            #             # print("next_e_abs")
+            #             # print(next_e_abs[_])
+            #             # print("next_r_abs")
+            #             # print(next_r_abs[_]
+            #             for i in range(len(e_space_abs[_, :])):
+            #                 print("{},{}==>{}{}".format(r_space[_,i], e_space[_,i], r_space_abs[_,i], e_space_abs[_, i]))
+            #             assert(1==0)
+        
             action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
 
+
             action_prob = ops.batch_lookup(action_dist, idx)
-            print ("===> action_prob_abs:", action_prob_abs.size(), " action_prob:", action_prob.size())
+            #print ("===> action_prob_abs:", action_prob_abs.size(), " action_prob:", action_prob.size())
             sample_outcome['action_sample'] = (next_r, next_e)
             sample_outcome_abs['action_sample'] = (next_r_abs, next_e_abs)
             sample_outcome['action_prob'] = action_prob

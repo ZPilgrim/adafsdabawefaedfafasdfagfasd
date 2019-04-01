@@ -39,11 +39,14 @@ class KnowledgeGraph(nn.Module):
         self.type2id, self.id2type = {}, {}
         self.entity2typeid = {}
         self.adj_list = None
+        self.adj_list_e2t = None
         self.bandwidth = args.bandwidth
         print("=====>>>> KnowledgeGraph bandwidth:", self.bandwidth, "CUTOFF:", CUTOFF)
         self.args = args
 
         self.action_space = None
+        self.action_space_abs = None
+        self.action_space_e2t = None
         self.action_space_buckets = None
         self.unique_r_space = None
 
@@ -110,6 +113,12 @@ class KnowledgeGraph(nn.Module):
                     print("load adj_list_abs_path")
                     self.adj_list_abs = pickle.load(fl)
                 print("===>call self.vectorize_action_space_with_abs(data_dir)")
+
+                adj_list_e2t_path = os.path.join(data_dir, 'adj_list_e2t.pkl')
+                with open(adj_list_e2t_path, 'rb') as fl:
+                    print("load adj_list_e2t_path")
+                    self.adj_list_e2t = pickle.load(fl)
+                print("===>call self.vectorize_action_space_with_e2t(data_dir)")
                 self.vectorize_action_space_with_abs(data_dir)
             else:
                 self.vectorize_action_space(data_dir)
@@ -149,6 +158,7 @@ class KnowledgeGraph(nn.Module):
                     targets = self.adj_list[e1][r]
                     for e2 in targets:
                         action_space.append((r, e2))
+
                 if len(action_space) + 1 >= self.bandwidth:
                     # Base graph pruning
                     sorted_action_space = \
@@ -246,8 +256,12 @@ class KnowledgeGraph(nn.Module):
         # Sanity check
         num_facts = 0
         num_facts_abs = 0
+        num_facts_e2t = 0
+        
         out_degrees = collections.defaultdict(int)
         out_degrees_abs = collections.defaultdict(int)
+        out_degrees_e2t = collections.defaultdict(int)
+
         for e1 in self.adj_list:
             for r in self.adj_list[e1]:
                 num_facts += len(self.adj_list[e1][r])
@@ -257,10 +271,14 @@ class KnowledgeGraph(nn.Module):
             for r in self.adj_list_abs[e1_abs]:
                 num_facts_abs += len(self.adj_list_abs[e1_abs][r])
                 out_degrees_abs[e1_abs] += len(self.adj_list_abs[e1_abs][r])
+        for e1 in self.adj_list_e2t:
+            for r in self.adj_list_e2t[e1]:
+                num_facts_e2t += len(self.adj_list_e2t[e1][r])
+                out_degrees_e2t[e1] += len(self.adj_list_e2t[e1][r])
 
-        print("Sanity check: maximum out degree: {} abs max out degree:{}".format(max(out_degrees.values()),
-                                                                                max(out_degrees_abs.values())))
-        print('Sanity check: {} facts [abs {} facts] in knowledge graph'.format(num_facts, num_facts_abs))
+        print("Sanity check: maximum out degree: {},  max out abs degree:{}, max out type degree:{}".format(max(out_degrees.values()),
+                                                                                                            max(out_degrees_abs.values()), max(out_degrees_e2t.values())))
+        print('Sanity check: {} facts [abs {} facts] [type {} facts] in knowledge graph'.format(num_facts, num_facts_abs, num_facts_e2t))
 
         # load page rank scores
         page_rank_scores, page_rank_abs_scores = load_page_rank_scores(os.path.join(data_dir, 'raw.pgrk'))
@@ -318,6 +336,25 @@ class KnowledgeGraph(nn.Module):
                     action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
                                        :self.bandwidth]
             action_space_abs.insert(0, (NO_OP_RELATION_ID, e1_abs))
+            return action_space_abs
+
+        def get_action_space_e2t(e1):
+            action_space_abs = []
+            if e1 in self.adj_list_e2t:
+                for r in self.adj_list_e2t[e1]:
+                    targets = self.adj_list_e2t[e1][r]
+                    for type in targets:
+                        action_space_abs.append((r, type))
+
+                if CUTOFF:
+                    assert(len(action_space_abs) <= self.bandwidth)
+                # if CUTOFF and len(action_space_abs) <= self.bandwidth:
+                #     print(len(action_space_abs))
+                #     assert(1 == 0)
+                    # action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
+                    #     :self.bandwidth]
+            action_space_abs.insert(
+                0, (NO_OP_RELATION_ID, self.get_typeid(e1)))
             return action_space_abs
 
 
@@ -396,8 +433,12 @@ class KnowledgeGraph(nn.Module):
         else:
             action_space_list = []
             action_space_abs_list = []
+            action_space_e2t_list = []
+
             max_num_actions = 0
             max_num_actions_abs = 0
+            max_num_actions_e2t = 0
+
             for e1 in range(self.num_entities):
 
                 action_space = get_action_space(e1)
@@ -412,10 +453,19 @@ class KnowledgeGraph(nn.Module):
                 action_space_abs_list.append(action_space_abs)
                 if len(action_space_abs) > max_num_actions_abs:
                     max_num_actions_abs = len(action_space_abs)
+            
+            for e1 in range(self.num_entities):
+                action_space_e2t = get_action_space_e2t(e1)
+                action_space_e2t_list.append(action_space_e2t)
+                if len(action_space_e2t) > max_num_actions_e2t:
+                    max_num_actions_e2t = len(action_space_e2t)
+                
+
 
             print('Vectorizing action spaces...')
             self.action_space = vectorize_action_space(action_space_list, max_num_actions)
             self.action_space_abs = vectorize_action_space(action_space_abs_list, max_num_actions)
+            self.action_space_e2t = vectorize_action_space(action_space_e2t_list, max_num_actions_e2t)
 
             if self.args.model.startswith('rule'):
                 raise NotImplementedError
