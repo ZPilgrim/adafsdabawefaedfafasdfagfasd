@@ -494,7 +494,8 @@ class LFramework(nn.Module):
         """
         if os.path.isfile(input_file):
             print('=> loading checkpoint \'{}\''.format(input_file))
-            checkpoint = torch.load(input_file)
+            print ("MAP GPU FROM 0 to 1")
+            checkpoint = torch.load(input_file, map_location={'cuda:0':'cuda:1'})
             self.load_state_dict(checkpoint['state_dict'])
             if not self.inference:
                 self.start_epoch = checkpoint['epoch_id'] + 1
