@@ -57,7 +57,7 @@ def sort_action_space_by_pr(action_space, pr_scores, seed):
     array = np.asarray(array )
     array = qsort_seed(array, 1, seed)
     idx = array[:,0].astype(np.int32)
-    print idx
+    print( idx)
     return action_space[idx]
 
 def run():
@@ -66,18 +66,18 @@ def run():
     array = [[i, _] for i, _ in enumerate(vs)]
     array2 = [[i, 1] for i, _ in enumerate(vs)]
     array, array2 = np.array(array), np.array(array2)
-    print qsort_seed(array, 1, seed=10)
-    print "seed 10:", qsort_seed(copy.deepcopy(array2), 1, seed=10)
-    print "seed 10:", qsort_seed(copy.deepcopy(array2), 1, seed=10)
-    print "seed 11:", qsort_seed(copy.deepcopy(array2), 1, seed=11)
-    print "seed 11:", qsort_seed(copy.deepcopy(array2), 1, seed=11)
+    print( qsort_seed(array, 1, seed=10))
+    print( "seed 10:", qsort_seed(copy.deepcopy(array2), 1, seed=10))
+    #print "seed 10:", qsort_seed(copy.deepcopy(array2), 1, seed=10)
+    #print "seed 11:", qsort_seed(copy.deepcopy(array2), 1, seed=11)
+    #print "seed 11:", qsort_seed(copy.deepcopy(array2), 1, seed=11)
 
 def test2():
     action_space = [ (1, 3), (3,2), (4,5) ]
     action_space = np.array(action_space, dtype=np.int32)
     prs = {3:0.5,2:0.1,5:0.6}
     action_space = sort_action_space_by_pr(action_space, prs, 1)
-    print action_space
+    print( action_space)
 
 if __name__ == '__main__':
     run()
