@@ -21,7 +21,7 @@ from src.data_utils import DUMMY_ENTITY_ID, DUMMY_RELATION_ID
 from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
-from utils.seed_sort import sort_action_space_by_pr
+from src.utils.seed_sort import sort_action_space_by_pr
 import numpy as np
 
 CUTOFF = True
@@ -474,13 +474,13 @@ class KnowledgeGraph(nn.Module):
             max_num_actions_abs = 0
             max_num_actions_e2t = 0
 
-            # for e1 in range(self.num_entities):
+            for e1 in range(self.num_entities):
 
-            #     action_space = get_action_space(e1)
+                action_space = get_action_space(e1)
 
-            #     action_space_list.append(action_space)
-            #     if len(action_space) > max_num_actions:
-            #         max_num_actions = len(action_space)
+                action_space_list.append(action_space)
+                if len(action_space) > max_num_actions:
+                    max_num_actions = len(action_space)
 
             for e1_abs in range(self.num_entities_type):
                 e1_abs = self.get_typeid(e1_abs)
@@ -489,20 +489,20 @@ class KnowledgeGraph(nn.Module):
                 if len(action_space_abs) > max_num_actions_abs:
                     max_num_actions_abs = len(action_space_abs)
 
-            # for e1 in range(self.num_entities):
-            #     action_space_e2t = get_action_space_e2t(e1)
-            #     action_space_e2t_list.append(action_space_e2t)
-            #     if len(action_space_e2t) > max_num_actions_e2t:
-            #         max_num_actions_e2t = len(action_space_e2t)
-
             for e1 in range(self.num_entities):
-                action_space, action_space_e2t = get_two_action_space(e1)
-                action_space_list.append(action_space)
+                action_space_e2t = get_action_space_e2t(e1)
                 action_space_e2t_list.append(action_space_e2t)
-                if len(action_space) > max_num_actions:
-                    max_num_actions = len(action_space)
                 if len(action_space_e2t) > max_num_actions_e2t:
-                    max_num_actions_e2t = len(action_space)
+                    max_num_actions_e2t = len(action_space_e2t)
+
+            # for e1 in range(self.num_entities):
+            #     action_space, action_space_e2t = get_two_action_space(e1)
+            #     action_space_list.append(action_space)
+            #     action_space_e2t_list.append(action_space_e2t)
+            #     if len(action_space) > max_num_actions:
+            #         max_num_actions = len(action_space)
+            #     if len(action_space_e2t) > max_num_actions_e2t:
+            #         max_num_actions_e2t = len(action_space)
 
             print('Vectorizing action spaces...')
             self.action_space = vectorize_action_space(action_space_list, max_num_actions)
