@@ -345,17 +345,36 @@ class KnowledgeGraph(nn.Module):
                     targets = self.adj_list_e2t[e1][r]
                     for type in targets:
                         action_space_abs.append((r, type))
-
-                if CUTOFF:
-                    assert(len(action_space_abs) <= self.bandwidth)
-                # if CUTOFF and len(action_space_abs) <= self.bandwidth:
-                #     print(len(action_space_abs))
-                #     assert(1 == 0)
-                    # action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
-                    #     :self.bandwidth]
-            action_space_abs.insert(
-                0, (NO_OP_RELATION_ID, self.get_typeid(e1)))
+                if CUTOFF and len(action_space_abs) + 1 >= self.bandwidth:
+                    action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
+                                       :self.bandwidth]
+            action_space_abs.insert(0, (NO_OP_RELATION_ID, e1_abs))
             return action_space_abs
+
+        def get_two_action_space(e1):
+            action_space = []
+            action_space_abs = []
+            if e1 in self.adj_list and e1 in self.adj_list_e2t:
+                for r in self.adj_list[e1]:
+                    targets = self.adj_list[e1][r]
+                    abs_targets = self.adj_list_e2t[e1][r]
+                    for _ in range(len(targets)):
+                        action_space.append((r, targets[_]))
+                        action_space_abs.append((r, abs_targets[_]))
+    
+                if CUTOFF and len(action_space) + 1 >= self.bandwidth:#排序并去重！！！去重！！！
+                    # Base graph pruning
+                    sorted_action_space = \
+                        sorted(
+                            action_space, key=lambda x: page_rank_scores[x[1]], reverse=True)
+                    sorted_abs_action_space = \
+                        sorted(
+                            sorted_abs_action_space, key=lambda x: page_rank_scores[x[1]], reverse=True)
+                    action_space = sorted_action_space[:self.bandwidth]
+                    action_space_abs = sorted_abs_action_space[:self.bandwidth]
+            action_space.insert(0, (NO_OP_RELATION_ID, e1))
+            action_space_abs.insert(0, (NO_OP_RELATION_ID, e1))
+            return action_space, action_space_abs
 
 
 
@@ -439,13 +458,13 @@ class KnowledgeGraph(nn.Module):
             max_num_actions_abs = 0
             max_num_actions_e2t = 0
 
-            for e1 in range(self.num_entities):
+            # for e1 in range(self.num_entities):
 
-                action_space = get_action_space(e1)
+            #     action_space = get_action_space(e1)
 
-                action_space_list.append(action_space)
-                if len(action_space) > max_num_actions:
-                    max_num_actions = len(action_space)
+            #     action_space_list.append(action_space)
+            #     if len(action_space) > max_num_actions:
+            #         max_num_actions = len(action_space)
 
             for e1_abs in range(self.num_entities_type):
                 e1_abs = self.get_typeid(e1_abs)
@@ -454,14 +473,21 @@ class KnowledgeGraph(nn.Module):
                 if len(action_space_abs) > max_num_actions_abs:
                     max_num_actions_abs = len(action_space_abs)
             
+            # for e1 in range(self.num_entities):
+            #     action_space_e2t = get_action_space_e2t(e1)
+            #     action_space_e2t_list.append(action_space_e2t)
+            #     if len(action_space_e2t) > max_num_actions_e2t:
+            #         max_num_actions_e2t = len(action_space_e2t)
+
             for e1 in range(self.num_entities):
-                action_space_e2t = get_action_space_e2t(e1)
+                action_space, action_space_e2t = get_two_action_space(e1)
+                action_space_list.append(action_space)
                 action_space_e2t_list.append(action_space_e2t)
+                if len(action_space) > max_num_actions:
+                    max_num_actions = len(action_space)
                 if len(action_space_e2t) > max_num_actions_e2t:
-                    max_num_actions_e2t = len(action_space_e2t)
+                    max_num_actions_e2t = len(action_space)
                 
-
-
             print('Vectorizing action spaces...')
             self.action_space = vectorize_action_space(action_space_list, max_num_actions)
             self.action_space_abs = vectorize_action_space(action_space_abs_list, max_num_actions)

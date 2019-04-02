@@ -42,62 +42,76 @@ def build(adj, e2t):
     return ret
 
 
-def build_e2t(adj, e2t, bandwidth, data_dir):
-    def load_page_rank_scores(input_path, entity2id):
-        pgrk_scores = collections.defaultdict(float)
-        with open(input_path) as f:
-            for line in f:
-                e, score = line.strip().split(':')
-                e_id = entity2id[e.strip()]
-                score = float(score)
-                pgrk_scores[e_id] = score
-        return pgrk_scores  
-    
-    entity2id, _ = load_index(os.path.join(data_dir, 'entity2id.txt'))
-    page_rank_scores = load_page_rank_scores(
-        os.path.join(data_dir, 'raw.pgrk'), entity2id)
-
+def build_e2t(adj, e2t):
     ret = collections.defaultdict()
-    if bandwidth:
-        print("building e2t abs graph for training with bandwith {}".format(bandwidth))
-    else:
-        print("building e2t abs graph for training without bandwith")
-    print(bandwidth)
     for src in adj:
         #src_abs = e2t[src]
         if src not in ret:
             ret[src] = collections.defaultdict()
-        temp = []
         for r in adj[src]:
-            targets = adj[src][r]
-            for e2 in targets:
-                temp.append((r, e2))
-        #截取
-        if bandwidth and len(temp) + 1 >= bandwidth:
-            _ = sorted(temp, key=lambda x: page_rank_scores[x[1]], reverse=True)
-            temp = _[ :bandwidth]
-        # else: 
-        #     temp = sorted(
-        #         temp, key=lambda x: page_rank_scores[x[1]], reverse=True)
-        #用截取后的tuple填充adj
-   
-        assert(len(temp) <=  bandwidth )
-        for _ in temp:
-            r, e = _
             if r not in ret[src]:
-                ret[src][r] = set()
-            ret[src][r].add(e2t[e])
-                #assert(len(ret[src][r]) <= bandwidth)
-    num_facts_e2t = 0
-    out_degrees_e2t = collections.defaultdict(int)
-    for e1 in ret:
-        for r in ret[e1]:
-            num_facts_e2t += len(ret[e1][r])
-            out_degrees_e2t[e1] += len(ret[e1][r])
-    
-    print("Sanity check: maximum out degree: {}".format(max(out_degrees_e2t.values())))
-
+                ret[src][r] = []
+            for v in adj[src][r]:
+                ret[src][r].append(e2t[v])
     return ret
+
+# def build_e2t(adj, e2t, bandwidth, data_dir):
+#     def load_page_rank_scores(input_path, entity2id):
+#         pgrk_scores = collections.defaultdict(float)
+#         with open(input_path) as f:
+#             for line in f:
+#                 e, score = line.strip().split(':')
+#                 e_id = entity2id[e.strip()]
+#                 score = float(score)
+#                 pgrk_scores[e_id] = score
+#         return pgrk_scores  
+    
+#     entity2id, _ = load_index(os.path.join(data_dir, 'entity2id.txt'))
+#     page_rank_scores = load_page_rank_scores(
+#         os.path.join(data_dir, 'raw.pgrk'), entity2id)
+
+#     ret = collections.defaultdict()
+#     if bandwidth:
+#         print("building e2t abs graph for training with bandwith {}".format(bandwidth))
+#     else:
+#         print("building e2t abs graph for training without bandwith")
+#     print(bandwidth)
+#     for src in adj:
+#         #src_abs = e2t[src]
+#         if src not in ret:
+#             ret[src] = collections.defaultdict()
+#         temp = []
+#         for r in adj[src]:
+#             targets = adj[src][r]
+#             for e2 in targets:
+#                 temp.append((r, e2))
+#         #截取
+#         if bandwidth and len(temp) + 1 >= bandwidth:
+#             _ = sorted(temp, key=lambda x: page_rank_scores[x[1]], reverse=True)
+#             temp = _[ :bandwidth]
+#         # else: 
+#         #     temp = sorted(
+#         #         temp, key=lambda x: page_rank_scores[x[1]], reverse=True)
+#         #用截取后的tuple填充adj
+        
+   
+#         assert(len(temp) <=  bandwidth )
+#         for _ in temp:
+#             r, e = _
+#             if r not in ret[src]:
+#                 ret[src][r] = set()
+#             ret[src][r].add(e2t[e])
+#                 #assert(len(ret[src][r]) <= bandwidth)
+#     num_facts_e2t = 0
+#     out_degrees_e2t = collections.defaultdict(int)
+#     for e1 in ret:
+#         for r in ret[e1]:
+#             num_facts_e2t += len(ret[e1][r])
+#             out_degrees_e2t[e1] += len(ret[e1][r])
+    
+#     print("Sanity check: maximum out degree: {}".format(max(out_degrees_e2t.values())))
+
+#     return ret
 
 
 def check_answer_ratio(examples):
@@ -442,7 +456,7 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
     with open(os.path.join(data_dir, 'adj_list_abs.pkl'), 'wb') as o_f:
         o_f.write(pickle.dumps(dict(adj_list_abs)))
 
-    adj_list_e2t = build_e2t(adj_list, entity2typeid, bandwidth, data_dir)
+    adj_list_e2t = build_e2t(adj_list, entity2typeid)
     with open(os.path.join(data_dir, 'adj_list_e2t.pkl'),'wb') as o_f:
         o_f.write(pickle.dumps(dict(adj_list_e2t)))
 

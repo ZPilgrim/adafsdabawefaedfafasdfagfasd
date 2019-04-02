@@ -250,6 +250,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
 
 
 ABS_ALL_PATH = []
+ABS_ALL_COMP = []
 
 def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None):
     """
@@ -513,13 +514,14 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
             path_components_list.append(p_c)
         beam_search_output['search_traces'] = search_trace
         ABS_ALL_PATH.append(beam_search_output)
+        ABS_ALL_COMP.append(path_components_list)
         # print("dumping...")
         # open('use_abs_graph_{}_save_path.json', 'w').write(json.dumps(beam_search_output))
         pickle.dump(beam_search_output,
                     open('use_abs_graph_{}_save_path_idx_{}.pkl'.format(kg.use_abstract_graph, len(ABS_ALL_PATH)-1),
                          'wb')
                     )
-        pickle.dump(path_components_list, open('path_components_list.pkl', 'wb'))
+        pickle.dump(path_components_list, open('path_components_list_idx_{}.pkl', 'wb'))
 
     return beam_search_output
 

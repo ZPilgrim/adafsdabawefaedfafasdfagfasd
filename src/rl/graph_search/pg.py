@@ -208,7 +208,7 @@ class PolicyGradient(LFramework):
             db_outcomes, inv_offset, policy_entropy, db_outcomes_abs, inv_offset_abs, policy_entropy_abs = pn.transit_with_abs(
                 e, obs, e_abs, obs_abs, kg, use_action_space_bucketing=self.use_action_space_bucketing)
 
-            sample_outcome, sample_outcome_abs = self.sample_action_with_abs(db_outcomes, db_outcomes_abs, inv_offset,
+            sample_outcome, sample_outcome_abs = self.sample_action_with_abs(e, db_outcomes, db_outcomes_abs, inv_offset,
                                                                              inv_offset_abs)
             action = sample_outcome['action_sample']
             action_abs = sample_outcome_abs['action_sample']
@@ -410,7 +410,7 @@ class PolicyGradient(LFramework):
 
         return sample_outcome
 
-    def sample_action_with_abs(self, db_outcomes, db_outcomes_abs, inv_offset=None, inv_offset_abs=None):
+    def sample_action_with_abs(self, last_e, db_outcomes, db_outcomes_abs, inv_offset=None, inv_offset_abs=None):
         """
         Sample an action based on current policy.
         :param db_outcomes (((r_space, e_space), action_mask), action_dist):
@@ -487,21 +487,28 @@ class PolicyGradient(LFramework):
             type_mask = (next_e_abs.view(-1, 1) == e_space_abs)
             r_mask = (next_r_abs.view(-1, 1) == r_space_abs)
             action_mask_abs = r_mask.mul(type_mask)
-            # if (action_mask_abs == 1).nonzero().size()[0] != next_e_abs.size()[0]:
-            #     print("----------------------------GETERROR-------------------------------")
-            #     for _ in range(r_space.size()[0]):
-            #         if torch.sum(action_mask_abs[_, :]) == 0:
-            #             # print("r_space_abs")
-            #             # print(r_space_abs[_, :])
-            #             # print("e_space_abs")
-            #             # print(e_space_abs[_, :])
-            #             # print("next_e_abs")
-            #             # print(next_e_abs[_])
-            #             # print("next_r_abs")
-            #             # print(next_r_abs[_]
-            #             for i in range(len(e_space_abs[_, :])):
-            #                 print("{},{}==>{},{}".format(r_space[_,i], e_space[_,i], r_space_abs[_,i], e_space_abs[_, i]))
-            #             assert(1==0)
+            if (action_mask_abs == 1).nonzero().size()[0] != next_e_abs.size()[0]:
+                print(action_mask_abs.size())
+                print(r_mask.size())
+                print(type_mask.size())
+                print(
+                    "----------------------------GETERROR-------------------------------")
+                for _ in range(r_space.size()[0]):
+                    if torch.sum(action_mask_abs[_, :]) == 0:
+                        # print("r_space_abs")
+                        # print(r_space_abs[_, :])
+                        # print("e_space_abs")
+                        # print(e_space_abs[_, :])
+                        # print("next_e_abs")
+                        # print(next_e_abs[_])
+                        # print("next_r_abs")
+                        # print(next_r_abs[_]
+                        for i in range(len(e_space_abs[_, :])):
+                            print("{},{}==>{},{}; search for r,e:({},{}), abs_r,abs_e:({},{}); r_mask:{}; type_mask:{}; action_mask:{}; e_s:{}".format(
+                                r_space[_, i], e_space[_, i], r_space_abs[_, i], e_space_abs[_, i], next_r[_], next_e[_], next_r_abs[_], 
+                                next_e_abs[_], r_mask[_, i], type_mask[_, i], action_mask_abs[_, i], last_e[_]))
+
+                        assert(1 == 0)
         
             action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
 
