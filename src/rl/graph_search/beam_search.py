@@ -480,25 +480,32 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
     beam_search_output['pred_e2s'] = action[1].view(batch_size, -1)
     beam_search_output['pred_e2_scores'] = log_action_prob.view(batch_size, -1)
 
+    # print(search_trace)
     if return_path_components:
         path_width = 10
         path_components_list = []
         for i in range(batch_size):
             p_c = []
-            for k, log_action_prob in enumerate(log_action_probs):
+            for k, log_action_prob in enumerate(log_action_probs): # k为num_step
+                # print (k, len(log_action_prob), log_action_prob)
                 top_k_edge_labels = []
-                for j in range(min(output_beam_size, path_width)):
+                for j in range(min(output_beam_size, path_width)):# 每一个样本多少个path
                     ind = i * output_beam_size + j
+                    # print(search_trace[k+1][0])
+                    # print(search_trace[k+1][1])
+                    # break
                     r = kg.id2relation[int(search_trace[k + 1][0][ind])]
                     _idx = int(search_trace[k + 1][1][ind])
                     e = kg.id2type[_idx]
                     if r.endswith('_inv'):
-                        edge_label = '<-{}-{} {}'.format(r[:-4], e, float(log_action_probs[k][ind]))
+                        #edge_label = '<=={}-{} {}'.format(r[:-4], e, float(log_action_probs[k][ind]))
+                        edge_label = '<=={}-{} '.format(r[:-4], e)
                     else:
-                        edge_label = '-{}->{} {}'.format(r, e, float(log_action_probs[k][ind]))
+                        #edge_label = '-{}==>{} {}'.format(r, e, float(log_action_probs[k][ind]))
+                        edge_label = '-{}==>{} '.format(r, e)
                     top_k_edge_labels.append(edge_label)
                 top_k_action_prob = log_action_prob[:path_width]
-                _idx = int(search_trace[1][0][i * output_beam_size])
+                _idx = int(search_trace[0][1][i * output_beam_size])
                 if _idx not in kg.id2type:
                     print ("+++return_path_components, _idx, i, output_beam_size path_width:", _idx, i, output_beam_size, path_width)
                 e_name = kg.id2type[_idx] if k == 0 else ''
@@ -512,8 +519,7 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
                     open('use_abs_graph_{}_save_path_idx_{}.pkl'.format(kg.use_abstract_graph, len(ABS_ALL_PATH)-1),
                          'wb')
                     )
-
-
+        pickle.dump(path_components_list, open('path_components_list.pkl', 'wb'))
 
     return beam_search_output
 
