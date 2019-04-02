@@ -21,8 +21,12 @@ from src.data_utils import DUMMY_ENTITY_ID, DUMMY_RELATION_ID
 from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
+from utils.seed_sort import sort_action_space_by_pr
+import numpy as np
 
 CUTOFF = True
+
+
 class KnowledgeGraph(nn.Module):
     """
     The discrete knowledge graph is stored with an adjacency list.
@@ -240,6 +244,7 @@ class KnowledgeGraph(nn.Module):
         Pre-process and numericalize the knowledge graph structure.
         """
         print("vectorize_action_space_with_abs")
+
         def load_page_rank_scores(input_path):
             pgrk_scores = collections.defaultdict(float)
             pgrk_abs_scores = collections.defaultdict(float)
@@ -257,7 +262,7 @@ class KnowledgeGraph(nn.Module):
         num_facts = 0
         num_facts_abs = 0
         num_facts_e2t = 0
-        
+
         out_degrees = collections.defaultdict(int)
         out_degrees_abs = collections.defaultdict(int)
         out_degrees_e2t = collections.defaultdict(int)
@@ -266,7 +271,7 @@ class KnowledgeGraph(nn.Module):
             for r in self.adj_list[e1]:
                 num_facts += len(self.adj_list[e1][r])
                 out_degrees[e1] += len(self.adj_list[e1][r])
-            # e1_abs = self.get_typeid(e1)
+                # e1_abs = self.get_typeid(e1)
         for e1_abs in self.adj_list_abs:
             for r in self.adj_list_abs[e1_abs]:
                 num_facts_abs += len(self.adj_list_abs[e1_abs][r])
@@ -276,9 +281,12 @@ class KnowledgeGraph(nn.Module):
                 num_facts_e2t += len(self.adj_list_e2t[e1][r])
                 out_degrees_e2t[e1] += len(self.adj_list_e2t[e1][r])
 
-        print("Sanity check: maximum out degree: {},  max out abs degree:{}, max out type degree:{}".format(max(out_degrees.values()),
-                                                                                                            max(out_degrees_abs.values()), max(out_degrees_e2t.values())))
-        print('Sanity check: {} facts [abs {} facts] [type {} facts] in knowledge graph'.format(num_facts, num_facts_abs, num_facts_e2t))
+        print("Sanity check: maximum out degree: {},  max out abs degree:{}, max out type degree:{}".format(
+            max(out_degrees.values()),
+            max(out_degrees_abs.values()), max(out_degrees_e2t.values())))
+        print(
+            'Sanity check: {} facts [abs {} facts] [type {} facts] in knowledge graph'.format(num_facts, num_facts_abs,
+                                                                                              num_facts_e2t))
 
         # load page rank scores
         page_rank_scores, page_rank_abs_scores = load_page_rank_scores(os.path.join(data_dir, 'raw.pgrk'))
@@ -361,22 +369,30 @@ class KnowledgeGraph(nn.Module):
                     for _ in range(len(targets)):
                         action_space.append((r, targets[_]))
                         action_space_abs.append((r, abs_targets[_]))
-    
-                if CUTOFF and len(action_space) + 1 >= self.bandwidth:#排序并去重！！！去重！！！
+
+                action_space = np.asarray(action_space, dtype=np.int32)
+                action_space_abs = np.asarray(action_space_abs, dtype=np.int32)
+
+                if CUTOFF and len(action_space) + 1 >= self.bandwidth:  # 排序并去重！！！去重！！！
                     # Base graph pruning
-                    sorted_action_space = \
-                        sorted(
-                            action_space, key=lambda x: page_rank_scores[x[1]], reverse=True)
-                    sorted_abs_action_space = \
-                        sorted(
-                            sorted_abs_action_space, key=lambda x: page_rank_scores[x[1]], reverse=True)
+                    seed = np.random.randint(0, self.num_entities)
+                    sorted_action_space = sort_action_space_by_pr(action_space, page_rank_scores, seed).tolist()
+                    sorted_abs_action_space = sort_action_space_by_pr(action_space_abs, page_rank_scores, seed).tolist()
+
+                    # sorted_action_space = \
+                    #     sorted(
+                    #         action_space, key=lambda x: page_rank_scores[x[1]], reverse=True)
+                    # sorted_abs_action_space = \
+                    #     sorted(
+                    #         action_space_abs, key=lambda x: page_rank_scores[x[1]], reverse=True)
                     action_space = sorted_action_space[:self.bandwidth]
                     action_space_abs = sorted_abs_action_space[:self.bandwidth]
+
+                    action_space_abs = list(set(action_space_abs))
+
             action_space.insert(0, (NO_OP_RELATION_ID, e1))
             action_space_abs.insert(0, (NO_OP_RELATION_ID, e1))
             return action_space, action_space_abs
-
-
 
         def get_unique_r_space(e1, adj_list=self.adj_list):
             if e1 in adj_list:
@@ -416,7 +432,7 @@ class KnowledgeGraph(nn.Module):
             self.entityabs2bucketid = torch.zeros(self.num_entities_type, 2).long()
             num_facts_saved_in_action_table = 0
             num_facts_abs_saved_in_action_table = 0
-            for e1 in range(self.num_entities): #TODO:CHECK这里可鞥呢是值遍历e1 in range(num_entities_types)就行了
+            for e1 in range(self.num_entities):  # TODO:CHECK这里可鞥呢是值遍历e1 in range(num_entities_types)就行了
                 # e1_abs = self.get_typeid(e1)
                 action_space = get_action_space(e1)
                 key = int(len(action_space) / self.args.bucket_interval) + 1
@@ -431,9 +447,9 @@ class KnowledgeGraph(nn.Module):
                 # num_facts_abs_saved_in_action_table += len(action_space_abs)
 
             for e1_abs in range(self.num_entities_type):
-                action_space_abs = get_action_space_abs(e1_abs)#[出边(r,e2)的个数+1]， 因为起始塞了一个
+                action_space_abs = get_action_space_abs(e1_abs)  # [出边(r,e2)的个数+1]， 因为起始塞了一个
                 key_abs = int(len(action_space_abs) / self.args.bucket_interval) + 1
-                self.entityabs2bucketid[e1_abs, 0] = key_abs    #bucket_key
+                self.entityabs2bucketid[e1_abs, 0] = key_abs  # bucket_key
                 self.entityabs2bucketid[e1_abs, 1] = len(action_space_abs_buckets_discrete[key_abs])
                 action_space_abs_buckets_discrete[key_abs].append(action_space_abs)
                 num_facts_abs_saved_in_action_table += len(action_space_abs)
@@ -472,7 +488,7 @@ class KnowledgeGraph(nn.Module):
                 action_space_abs_list.append(action_space_abs)
                 if len(action_space_abs) > max_num_actions_abs:
                     max_num_actions_abs = len(action_space_abs)
-            
+
             # for e1 in range(self.num_entities):
             #     action_space_e2t = get_action_space_e2t(e1)
             #     action_space_e2t_list.append(action_space_e2t)
@@ -487,7 +503,7 @@ class KnowledgeGraph(nn.Module):
                     max_num_actions = len(action_space)
                 if len(action_space_e2t) > max_num_actions_e2t:
                     max_num_actions_e2t = len(action_space)
-                
+
             print('Vectorizing action spaces...')
             self.action_space = vectorize_action_space(action_space_list, max_num_actions)
             self.action_space_abs = vectorize_action_space(action_space_abs_list, max_num_actions)

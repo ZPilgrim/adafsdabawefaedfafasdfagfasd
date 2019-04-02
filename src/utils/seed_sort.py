@@ -80,7 +80,7 @@ def test2():
     print action_space
 
 if __name__ == '__main__':
-    # run()
-    test2()
+    run()
+    # test2()
 
 __END__ = True
