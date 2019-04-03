@@ -370,7 +370,7 @@ def inference(lf):
                     ans.append(e2)
             return ans
 
-        def abs2real_path(abs_traces, data, k=10):
+        def abs2real_path(abs_traces, data, k=args.beam_size):
             # data = data.cpu().numpy()
             tot_paths = []
             for abs_trace in abs_traces:  # 一个abs_trace代表一个样本
@@ -405,10 +405,11 @@ def inference(lf):
                         continue
                     if e1_0 in lf.kg.adj_list:
                         tree_path[e1_0] = collections.defaultdict()
-                        if r_0 not in lf.kg.adj_list[e1_0]:
-                            missing[1] += 1
-                            continue
-                        e1_1s = get_next_outs(lf.kg.adj_list[e1_0], r_0, path[1][1])
+                        # get_next_outs(lf.kg.adjlist)
+                        # if r_0 not in lf.kg.adj_list[e1_0]:
+                        #     missing[1] += 1
+                        #     continue
+                        e1_1s = get_next_outs(lf.kg.adj_list[e1_0], path[1][0], path[1][1])
                         if len(e1_1s) == 0:
                             missing[2] += 1
                             continue
@@ -438,9 +439,12 @@ def inference(lf):
                     else:
                         print("ERROR e not on real KG:", e1_0)
                 for e3, p in sorted(real_e3_score, key=lambda d: d[1], reverse=True)[:k]:
-                    score_mat[0, e3] += p  # TODO:CHECK
+                    if p > float(score_mat[0, e3]):
+                        score_mat[0, e3] = p
+                    # score_mat[0, e3] += p  # TODO:CHECK
                 score_rslts.append(score_mat)
             if len(score_rslts) == 0:
+                print("MAYBE ERROR: len(score_rslts) == 0")
                 score_rslts = zeros_var_cuda([len(data), lf.kg.num_entities])
             else:
                 score_rslts = torch.cat(score_rslts)  # [nsample, num_entities]
@@ -478,6 +482,7 @@ def inference(lf):
         eval_metrics['dev_real']['mrr'] = dev_metrics[4]
         src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
         print('Dev set performance real (lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+
         ABS_ALL_PATH = []
 
         pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
@@ -488,15 +493,20 @@ def inference(lf):
         eval_metrics['test']['hits_at_5'] = test_metrics[2]
         eval_metrics['test']['hits_at_10'] = test_metrics[3]
         eval_metrics['test']['mrr'] = test_metrics[4]
+        print('Test set performance abs (lf.forward abs_graph=True):', eval_metrics)
+
+        from src.rl.graph_search.beam_search import ABS_ALL_PATH
+        # global ABS_ALL_PATH
+        abs_traces = ABS_ALL_PATH[len(dev_data):]
         print("TEST ALL PATH CNT:", len(abs_traces), len(test_data))
-        pred_scores = abs2real_path(ABS_ALL_PATH, test_data)
+        pred_scores = abs2real_path(abs_traces, test_data)
         test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects,
                                                verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
-        eval_metrics['test_real']['hits_at_1'] = test_metrics[0]
-        eval_metrics['test_real']['hits_at_3'] = test_metrics[1]
-        eval_metrics['test_real']['hits_at_5'] = test_metrics[2]
-        eval_metrics['test_real']['hits_at_10'] = test_metrics[3]
-        eval_metrics['test_real']['mrr'] = test_metrics[4]
+        eval_metrics['test']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test']['mrr'] = test_metrics[4]
         print('Test set performance real (lf.forward abs_graph=True):', eval_metrics)
 
 
