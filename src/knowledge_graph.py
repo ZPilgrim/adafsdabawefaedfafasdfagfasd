@@ -21,7 +21,7 @@ from src.data_utils import DUMMY_ENTITY_ID, DUMMY_RELATION_ID
 from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
-from src.utils.seed_sort import sort_action_space_by_pr
+from src.utils.seed_sort import sort_idx_by_pr
 import numpy as np
 
 CUTOFF = True
@@ -361,23 +361,30 @@ class KnowledgeGraph(nn.Module):
 
         def get_two_action_space(e1):
             action_space = []
-            action_space_abs = []
+            action_space_e2t = []
             if e1 in self.adj_list and e1 in self.adj_list_e2t:
                 for r in self.adj_list[e1]:
                     targets = self.adj_list[e1][r]
                     abs_targets = self.adj_list_e2t[e1][r]
+                    for _i in range(len(targets)):
+                        assert self.entity2typeid[targets[_i]] == abs_targets[_i]
                     for _ in range(len(targets)):
                         action_space.append((r, targets[_]))
-                        action_space_abs.append((r, abs_targets[_]))
-
-                action_space = np.asarray(action_space, dtype=np.int32)
-                action_space_abs = np.asarray(action_space_abs, dtype=np.int32)
+                        action_space_e2t.append((r, abs_targets[_]))
 
                 if CUTOFF and len(action_space) + 1 >= self.bandwidth:  # 排序并去重！！！去重！！！
+                    action_space = np.asarray(action_space, dtype=np.int32)
+                    action_space_e2t = np.asarray(action_space_e2t, dtype=np.int32)
                     # Base graph pruning
-                    seed = np.random.randint(0, self.num_entities)
-                    sorted_action_space = sort_action_space_by_pr(action_space, page_rank_scores, seed).tolist()
-                    sorted_abs_action_space = sort_action_space_by_pr(action_space_abs, page_rank_scores, seed).tolist()
+                    #seed = np.random.randint(0, self.num_entities)
+                    array = np.array([page_rank_scores[_[1]]
+                             for i, _ in enumerate(action_space)])
+          
+                    #idx = sort_idx_by_pr(array, seed)
+                    idx = np.argsort(array)[::-1] #从大到小的index
+
+                    sorted_action_space = [(int(_[0]), int(_[1])) for _ in action_space[idx]]
+                    sorted_e2t_action_space = [(int(_[0]), int(_[1])) for _ in action_space_e2t[idx]]
 
                     # sorted_action_space = \
                     #     sorted(
@@ -385,14 +392,27 @@ class KnowledgeGraph(nn.Module):
                     # sorted_abs_action_space = \
                     #     sorted(
                     #         action_space_abs, key=lambda x: page_rank_scores[x[1]], reverse=True)
+
                     action_space = sorted_action_space[:self.bandwidth]
-                    action_space_abs = sorted_abs_action_space[:self.bandwidth]
-
-                    action_space_abs = list(set(action_space_abs))
-
-            action_space.insert(0, (NO_OP_RELATION_ID, e1))
-            action_space_abs.insert(0, (NO_OP_RELATION_ID, e1))
-            return action_space, action_space_abs
+                    action_space_e2t = sorted_e2t_action_space[:self.bandwidth]
+                    # if e1 == 48:
+                        # print([(_[0], _[1], self.entity2typeid[_[1]]) for _ in action_space])
+                        # print("")
+                        # print([(_[0], _[1]) for _ in action_space_e2t])
+                        # print("")
+                        # abs_type_set = set( [_[1] for _ in action_space_e2t] )
+                        # real_type_set = set( [ self.entity2typeid[_[1]] for _ in action_space ] )
+                        # print( (real_type_set&abs_type_set) == real_type_set )
+                        # print("real-abs:",  real_type_set - abs_type_set )
+                        # print("abs-:",  abs_type_set - real_type_set)
+                action_space_e2t = list(set(action_space_e2t))
+                action_space.insert(0, (NO_OP_RELATION_ID, e1))
+                action_space_e2t.insert(
+                    0, (NO_OP_RELATION_ID, self.entity2typeid[e1]))
+                if e1 == 48:
+                    print(action_space)
+                    print(action_space_e2t)
+            return action_space, action_space_e2t
 
         def get_unique_r_space(e1, adj_list=self.adj_list):
             if e1 in adj_list:
@@ -474,13 +494,13 @@ class KnowledgeGraph(nn.Module):
             max_num_actions_abs = 0
             max_num_actions_e2t = 0
 
-            for e1 in range(self.num_entities):
+            # for e1 in range(self.num_entities):
 
-                action_space = get_action_space(e1)
+            #     action_space = get_action_space(e1)
 
-                action_space_list.append(action_space)
-                if len(action_space) > max_num_actions:
-                    max_num_actions = len(action_space)
+            #     action_space_list.append(action_space)
+            #     if len(action_space) > max_num_actions:
+            #         max_num_actions = len(action_space)
 
             for e1_abs in range(self.num_entities_type):
                 e1_abs = self.get_typeid(e1_abs)
@@ -489,24 +509,25 @@ class KnowledgeGraph(nn.Module):
                 if len(action_space_abs) > max_num_actions_abs:
                     max_num_actions_abs = len(action_space_abs)
 
+            # for e1 in range(self.num_entities):
+            #     action_space_e2t = get_action_space_e2t(e1)
+            #     action_space_e2t_list.append(action_space_e2t)
+            #     if len(action_space_e2t) > max_num_actions_e2t:
+            #         max_num_actions_e2t = len(action_space_e2t)
+
             for e1 in range(self.num_entities):
-                action_space_e2t = get_action_space_e2t(e1)
+                action_space, action_space_e2t = get_two_action_space(e1)
+                action_space_list.append(action_space)
                 action_space_e2t_list.append(action_space_e2t)
+                if len(action_space) > max_num_actions:
+                    max_num_actions = len(action_space)
                 if len(action_space_e2t) > max_num_actions_e2t:
                     max_num_actions_e2t = len(action_space_e2t)
 
-            # for e1 in range(self.num_entities):
-            #     action_space, action_space_e2t = get_two_action_space(e1)
-            #     action_space_list.append(action_space)
-            #     action_space_e2t_list.append(action_space_e2t)
-            #     if len(action_space) > max_num_actions:
-            #         max_num_actions = len(action_space)
-            #     if len(action_space_e2t) > max_num_actions_e2t:
-            #         max_num_actions_e2t = len(action_space)
-
-            print('Vectorizing action spaces...')
+            print('Vectorizing action spaces...max_num_actions {} max_num_actions_abs {} max_num_actions_e2t {},'.format(
+                max_num_actions, max_num_actions_abs, max_num_actions_e2t))
             self.action_space = vectorize_action_space(action_space_list, max_num_actions)
-            self.action_space_abs = vectorize_action_space(action_space_abs_list, max_num_actions)
+            self.action_space_abs = vectorize_action_space(action_space_abs_list, max_num_actions_abs)
             self.action_space_e2t = vectorize_action_space(action_space_e2t_list, max_num_actions_e2t)
 
             if self.args.model.startswith('rule'):

@@ -445,17 +445,24 @@ def prepare_kb_envrioment(raw_kb_path, train_path, dev_path, test_path, test_mod
                 num_facts += 1
     print('{} facts processed'.format(num_facts))
     # Save adjacency list
+
+    # Convert dict of dict with set value to dict of dict with list value
+    for src in adj_list:
+        for r in adj_list[src]:
+            adj_list[src][r] = [v for v in adj_list[src][r]]
+
     adj_list_path = os.path.join(data_dir, 'adj_list.pkl')
     with open(adj_list_path, 'wb') as o_f:
         pickle.dump(dict(adj_list), o_f)
     with open(os.path.join(data_dir, 'entity2typeid.pkl'), 'wb') as o_f:
         pickle.dump(entity2typeid, o_f)
 
-    print("building abs graph map...")
+    print("building abs graph map for test ...........")
     adj_list_abs = build(adj_list, entity2typeid)
     with open(os.path.join(data_dir, 'adj_list_abs.pkl'), 'wb') as o_f:
         o_f.write(pickle.dumps(dict(adj_list_abs)))
 
+    print("building e2t graph map for training ..........")
     adj_list_e2t = build_e2t(adj_list, entity2typeid)
     with open(os.path.join(data_dir, 'adj_list_e2t.pkl'),'wb') as o_f:
         o_f.write(pickle.dumps(dict(adj_list_e2t)))
