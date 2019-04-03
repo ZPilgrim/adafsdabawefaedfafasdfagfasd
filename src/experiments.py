@@ -405,10 +405,11 @@ def inference(lf):
                         continue
                     if e1_0 in lf.kg.adj_list:
                         tree_path[e1_0] = collections.defaultdict()
-                        if r_0 not in lf.kg.adj_list[e1_0]:
-                            missing[1] += 1
-                            continue
-                        e1_1s = get_next_outs(lf.kg.adj_list[e1_0], r_0, path[1][1])
+                        # get_next_outs(lf.kg.adjlist)
+                        # if r_0 not in lf.kg.adj_list[e1_0]:
+                        #     missing[1] += 1
+                        #     continue
+                        e1_1s = get_next_outs(lf.kg.adj_list[e1_0], path[1][0], path[1][1])
                         if len(e1_1s) == 0:
                             missing[2] += 1
                             continue
@@ -438,7 +439,9 @@ def inference(lf):
                     else:
                         print("ERROR e not on real KG:", e1_0)
                 for e3, p in sorted(real_e3_score, key=lambda d: d[1], reverse=True)[:k]:
-                    score_mat[0, e3] += p  # TODO:CHECK
+                    if p > float(score_mat[0, e3]):
+                        score_mat[0, e3] = p
+                    # score_mat[0, e3] += p  # TODO:CHECK
                 score_rslts.append(score_mat)
             if len(score_rslts) == 0:
                 score_rslts = zeros_var_cuda([len(data), lf.kg.num_entities])
