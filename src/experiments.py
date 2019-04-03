@@ -444,6 +444,7 @@ def inference(lf):
                     # score_mat[0, e3] += p  # TODO:CHECK
                 score_rslts.append(score_mat)
             if len(score_rslts) == 0:
+                print("MAYBE ERROR: len(score_rslts) == 0")
                 score_rslts = zeros_var_cuda([len(data), lf.kg.num_entities])
             else:
                 score_rslts = torch.cat(score_rslts)  # [nsample, num_entities]
@@ -481,6 +482,7 @@ def inference(lf):
         eval_metrics['dev_real']['mrr'] = dev_metrics[4]
         src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
         print('Dev set performance real (lf.forward abs_graph=True):')  # TODO: check一下这个hits_and_ranks是否适用abs
+
         ABS_ALL_PATH = []
 
         pred_scores = lf.forward(test_data_abs, abs_graph=True, verbose=False)
@@ -491,8 +493,12 @@ def inference(lf):
         eval_metrics['test']['hits_at_5'] = test_metrics[2]
         eval_metrics['test']['hits_at_10'] = test_metrics[3]
         eval_metrics['test']['mrr'] = test_metrics[4]
+
+        from src.rl.graph_search.beam_search import ABS_ALL_PATH
+        # global ABS_ALL_PATH
+        abs_traces = ABS_ALL_PATH[len(dev_data):]
         print("TEST ALL PATH CNT:", len(abs_traces), len(test_data))
-        pred_scores = abs2real_path(ABS_ALL_PATH, test_data)
+        pred_scores = abs2real_path(abs_traces, test_data)
         test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects,
                                                verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
         eval_metrics['test']['hits_at_1'] = test_metrics[0]
