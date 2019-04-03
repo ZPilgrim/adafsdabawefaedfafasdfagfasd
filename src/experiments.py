@@ -492,11 +492,11 @@ def inference(lf):
         pred_scores = abs2real_path(ABS_ALL_PATH, test_data)
         test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects,
                                                verbose=True)  # TODO: check一下这个hits_and_ranks是否适用abs
-        eval_metrics['test_real']['hits_at_1'] = test_metrics[0]
-        eval_metrics['test_real']['hits_at_3'] = test_metrics[1]
-        eval_metrics['test_real']['hits_at_5'] = test_metrics[2]
-        eval_metrics['test_real']['hits_at_10'] = test_metrics[3]
-        eval_metrics['test_real']['mrr'] = test_metrics[4]
+        eval_metrics['test']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test']['mrr'] = test_metrics[4]
         print('Test set performance real (lf.forward abs_graph=True):', eval_metrics)
 
 
