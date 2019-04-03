@@ -370,7 +370,7 @@ def inference(lf):
                     ans.append(e2)
             return ans
 
-        def abs2real_path(abs_traces, data, k=10):
+        def abs2real_path(abs_traces, data, k=args.beam_size):
             # data = data.cpu().numpy()
             tot_paths = []
             for abs_trace in abs_traces:  # 一个abs_trace代表一个样本
@@ -493,6 +493,7 @@ def inference(lf):
         eval_metrics['test']['hits_at_5'] = test_metrics[2]
         eval_metrics['test']['hits_at_10'] = test_metrics[3]
         eval_metrics['test']['mrr'] = test_metrics[4]
+        print('Test set performance abs (lf.forward abs_graph=True):', eval_metrics)
 
         from src.rl.graph_search.beam_search import ABS_ALL_PATH
         # global ABS_ALL_PATH
