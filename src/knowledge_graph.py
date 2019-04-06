@@ -21,7 +21,7 @@ from src.data_utils import DUMMY_ENTITY_ID, DUMMY_RELATION_ID
 from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
-from src.utils.seed_sort import sort_idx_by_pr
+# from src.utils.seed_sort import sort_idx_by_pr
 import numpy as np
 
 CUTOFF = True
@@ -405,7 +405,7 @@ class KnowledgeGraph(nn.Module):
                         # print( (real_type_set&abs_type_set) == real_type_set )
                         # print("real-abs:",  real_type_set - abs_type_set )
                         # print("abs-:",  abs_type_set - real_type_set)
-                action_space_e2t = list(set(action_space_e2t))
+                # action_space_e2t = list(set(action_space_e2t))
                 action_space.insert(0, (NO_OP_RELATION_ID, e1))
                 action_space_e2t.insert(
                     0, (NO_OP_RELATION_ID, self.entity2typeid[e1]))

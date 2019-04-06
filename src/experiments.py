@@ -43,6 +43,9 @@ torch.cuda.set_device(args.gpu)
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed_all(args.seed)
 
+print('======>args.use_action_space_bucketing = False')
+args.use_action_space_bucketing = False
+
 
 def process_data():
     data_dir = args.data_dir
@@ -342,6 +345,7 @@ def inference(lf):
         src.eval.hits_and_ranks_by_seen_queries(
             dev_data, pred_scores, lf.kg.all_objects, seen_queries, verbose=True)
     elif args.abs2real_infer:
+        #--use_action_space_bucketing
         print ("CHECK abs verbose True")
         dev_path = os.path.join(args.data_dir, 'dev.triples')
         test_path = os.path.join(args.data_dir, 'test.triples')
@@ -509,6 +513,39 @@ def inference(lf):
         eval_metrics['test']['mrr'] = test_metrics[4]
         print('Test set performance real (lf.forward abs_graph=True):', eval_metrics)
 
+
+    elif args.same_infer:
+        CHECK = False
+        print ("CHECK same_infer verbose True, CHECK:{}".format(CHECK))
+        dev_path = os.path.join(args.data_dir, 'dev.triples')
+        if CHECK:
+            dev_path = dev_path[:100]
+        test_path = os.path.join(args.data_dir, 'test.triples')
+        dev_data = data_utils.load_triples(
+            dev_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        test_data = data_utils.load_triples(
+            test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
+        print('Dev set performance:')
+        pred_scores = lf.forward(dev_data, same_infer=True, verbose=False)
+        # print ("dumping...")
+        # open('check_pred_scores.pkl', 'wb').write(pickle.dumps(pred_scores))
+
+        dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
+        eval_metrics['dev'] = {}
+        eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
+        eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
+        eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
+        eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
+        eval_metrics['dev']['mrr'] = dev_metrics[4]
+        src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
+        print('Test set performance:')
+        pred_scores = lf.forward(test_data, same_infer=True, verbose=False)
+        test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects, verbose=True)
+        eval_metrics['test']['hits_at_1'] = test_metrics[0]
+        eval_metrics['test']['hits_at_3'] = test_metrics[1]
+        eval_metrics['test']['hits_at_5'] = test_metrics[2]
+        eval_metrics['test']['hits_at_10'] = test_metrics[3]
+        eval_metrics['test']['mrr'] = test_metrics[4]
 
     elif args.use_abstract_graph:
         print ("CHECK abs verbose True")

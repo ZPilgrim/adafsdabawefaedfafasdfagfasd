@@ -349,7 +349,7 @@ class LFramework(nn.Module):
                         with open(fn_ratio_file, 'a') as o_f:
                             o_f.write('{}\n'.format(fn_ratio))
 
-    def forward(self, examples, abs_graph=False, verbose=False):
+    def forward(self, examples, abs_graph=False, same_infer=False, verbose=False):
         pred_scores = []
         for example_id in tqdm(range(0, len(examples), self.batch_size)):
             mini_batch = examples[example_id:example_id + self.batch_size]
@@ -357,7 +357,9 @@ class LFramework(nn.Module):
             if len(mini_batch) < self.batch_size:
 
                 self.make_full_batch(mini_batch, self.batch_size)
-            if self.use_abstract_graph and abs_graph:
+            if self.use_abstract_graph and same_infer:
+                pred_score = self.predict_same(mini_batch, verbose=verbose)
+            elif self.use_abstract_graph and abs_graph:
                 # print("==>forward batch_size infer:", self.batch_size)
                 pred_score = self.predict_abs(mini_batch, verbose=verbose)
             else:

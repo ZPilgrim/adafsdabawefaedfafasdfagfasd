@@ -633,6 +633,43 @@ class PolicyGradient(LFramework):
                     pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
         return pred_scores
 
+    def predict_same(self, mini_batch, verbose=False):
+        # return_merge_scores= None #'sum'
+        # return_merge_scores= 'sum'
+
+        # print("return_merge_scores:", self.return_merge_scores, type(self.return_merge_scores))
+        kg, pn = self.kg, self.mdl
+        e1, e2, r = self.format_batch(mini_batch)
+        beam_search_output = search.beam_search_same(
+            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=self.return_merge_scores)
+        pred_e2s = beam_search_output['pred_e2s']
+        pred_e2_scores = beam_search_output['pred_e2_scores']
+
+        if verbose:
+            # print inference paths
+            search_traces = beam_search_output['search_traces']
+            output_beam_size = min(self.beam_size, pred_e2_scores.shape[1])
+            for i in range(len(e1)):
+                for j in range(output_beam_size):
+                    ind = i * output_beam_size + j
+                    if pred_e2s[i][j] == kg.dummy_e:
+                        break
+                    search_trace = []
+                    for k in range(len(search_traces)):
+                        search_trace.append((int(search_traces[k][0][ind]), int(search_traces[k][1][ind])))
+                    print('beam {}: score = {} \n<PATH> {}'.format(
+                        j, float(pred_e2_scores[i][j]), ops.format_path(search_trace, kg)))
+
+        with torch.no_grad():
+            # print("__++++shape:", [len(e1), kg.num_entities])
+            pred_scores = zeros_var_cuda([len(e1), kg.num_entities])
+            for i in range(len(e1)):
+                if self.return_merge_scores == 'sum' or self.return_merge_scores == 'mean':
+                    pred_scores[i][pred_e2s[i].tolist()] = pred_e2_scores[i]
+                else:
+                    pred_scores[i][pred_e2s[i]] = torch.exp(pred_e2_scores[i])
+        return pred_scores
+
     def predict_abs(self, mini_batch, verbose=False):
         # return_merge_scores= None #'sum'
         # return_merge_scores= 'sum'

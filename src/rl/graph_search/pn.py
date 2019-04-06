@@ -153,7 +153,7 @@ class GraphSearchPolicy(nn.Module):
 
         return db_outcomes, inv_offset, entropy
 
-    def transit_on_abs(self, e, obs, kg, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
+    def transit_on_abs(self, e, obs, kg, use_action_space_bucketing=False, merge_aspace_batching_outcome=False):
         """
         Compute the next action distribution based on
             (a) the current node (entity) in KG and the query relation
@@ -266,6 +266,142 @@ class GraphSearchPolicy(nn.Module):
         else:
             action_space = self.get_action_space_abs(e, obs, kg)
             action_dist, entropy = policy_nn_fun_abs(X2, action_space)
+            db_outcomes = [(action_space, action_dist)]
+            inv_offset = None
+
+            #=====
+            # action_space = self.get_action_space(e, obs, kg)
+            # action_dist, entropy = policy_nn_fun(X2, action_space)
+            #
+            # action_space_abs = self.get_action_space_e2t(e, obs_abs, kg)
+            # action_dist_abs, entropy_abs = policy_nn_fun_abs(X2_abs, action_space_abs)
+            # db_outcomes = [(action_space, action_dist)]
+            # db_outcomes_abs = [(action_space_abs, action_dist_abs)]
+            # inv_offset = None
+            # inv_offset_abs = None
+
+        return db_outcomes, inv_offset, entropy
+
+
+    def transit_same(self, e, obs, e_abs, obs_abs, kg, use_action_space_bucketing=True, \
+                                                                              merge_aspace_batching_outcome=False):
+        """
+        Compute the next action distribution based on
+            (a) the current node (entity) in KG and the query relation
+            (b) action history representation
+        :param e: agent location (node) at step t.
+        :param obs: agent observation at step t.
+            e_s: source node
+            q: query relation
+            e_t: target node
+            last_step: If set, the agent is carrying out the last step.
+            last_r: label of edge traversed in the previous step
+            seen_nodes: notes seen on the paths
+        :param kg: Knowledge graph environment.
+        :param use_action_space_bucketing: If set, group the action space of different nodes
+            into buckets by their sizes.
+        :param merge_aspace_batch_outcome: If set, merge the transition probability distribution
+            generated of different action space bucket into a single batch.
+        :return
+            With aspace batching and without merging the outcomes:
+                db_outcomes: (Dynamic Batch) (action_space, action_dist)
+                    action_space: (Batch) padded possible action indices
+                    action_dist: (Batch) distribution over actions.
+                inv_offset: Indices to set the dynamic batching output back to the original order.
+                entropy: (Batch) entropy of action distribution.
+            Else:
+                action_dist: (Batch) distribution over actions.
+                entropy: (Batch) entropy of action distribution.
+        """
+        e_s, q, e_t, last_step, last_r, seen_nodes = obs
+        e_s_abs, q_abs, e_t_abs, last_step_abs, last_r_abs, seen_nodes_abs = obs_abs
+
+        # Representation of the current state (current node and other observations)
+        Q = kg.get_relation_abs_embeddings(q)
+        H = self.path_abs[-1][0][-1, :, :]
+        if self.relation_only:
+            X = torch.cat([H, Q], dim=-1)
+        elif self.relation_only_in_path:
+            E_s = kg.get_entity_abs_embeddings(e_s_abs)
+            E = kg.get_entity_abs_embeddings(e_abs)
+            X = torch.cat([E, H, E_s, Q], dim=-1)
+        else:  # 应该走的这个分支
+            E = kg.get_entity_abs_embeddings(e_abs)
+            X = torch.cat([E, H, Q], dim=-1)
+
+        # MLP
+        # X = self.W1(X)
+        # X = F.relu(X)
+        # X = self.W1Dropout(X)
+        # X = self.W2(X)
+        # X2 = self.W2Dropout(X)
+        #
+        def MLP(X, W1, W1DP, W2, W2DP):
+            X = W1DP(F.relu(W1(X)))
+            X = W2DP(W2(X))
+            return X
+
+        X2 = MLP(X, self.W1_abstract, self.W1Dropout_abstract, self.W2_abstract, self.W2Dropout_abstract)
+
+        # def policy_nn_fun(X2, action_space):
+        #     (r_space, e_space), action_mask = action_space
+        #     A = self.get_action_embedding((r_space, e_space), kg)
+        #     action_dist = F.softmax(
+        #         torch.squeeze(A @ torch.unsqueeze(X2, 2), 2) - (1 - action_mask) * ops.HUGE_INT, dim=-1)
+        #     # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
+        #     return action_dist, ops.entropy(action_dist)
+
+        def policy_nn_fun_abs(X2, action_space):
+            (r_space, e_space), action_mask = action_space
+            A = self.get_action_embedding_abs((r_space, e_space), kg)
+            action_dist = F.softmax(
+                torch.squeeze(A @ torch.unsqueeze(X2, 2), 2) - (1 - action_mask) * ops.HUGE_INT, dim=-1)
+            # action_dist = ops.weighted_softmax(torch.squeeze(A @ torch.unsqueeze(X2, 2), 2), action_mask)
+            return action_dist, ops.entropy(action_dist)
+
+        def pad_and_cat_action_space(action_spaces, inv_offset):
+            db_r_space, db_e_space, db_action_mask = [], [], []
+            for (r_space, e_space), action_mask in action_spaces:
+                db_r_space.append(r_space)
+                db_e_space.append(e_space)
+                db_action_mask.append(action_mask)
+            r_space = ops.pad_and_cat(db_r_space, padding_value=kg.dummy_r)[inv_offset]
+            e_space = ops.pad_and_cat(db_e_space, padding_value=kg.dummy_e)[inv_offset]
+            action_mask = ops.pad_and_cat(db_action_mask, padding_value=0)[inv_offset]
+            action_space = ((r_space, e_space), action_mask)
+            return action_space
+
+        if use_action_space_bucketing:  # 走的这个分支
+            """
+
+            """
+            db_outcomes = []
+            entropy_list = []
+            references = []
+            db_action_spaces, db_references = self.get_action_space_in_buckets_on_abs(e, obs, kg)
+            for action_space_b, reference_b in zip(db_action_spaces, db_references):
+                X2_b = X2[reference_b, :]
+                action_dist_b, entropy_b = policy_nn_fun_abs(X2_b, action_space_b)
+                references.extend(reference_b)
+                db_outcomes.append((action_space_b, action_dist_b))
+                entropy_list.append(entropy_b)
+            inv_offset = [i for i, _ in sorted(enumerate(references), key=lambda x: x[1])]
+            entropy = torch.cat(entropy_list, dim=0)[inv_offset]
+            if merge_aspace_batching_outcome:
+                db_action_dist = []
+                for _, action_dist in db_outcomes:
+                    db_action_dist.append(action_dist)
+                action_space = pad_and_cat_action_space(db_action_spaces, inv_offset)
+                action_dist = ops.pad_and_cat(db_action_dist, padding_value=0)[inv_offset]
+                db_outcomes = [(action_space, action_dist)]
+                inv_offset = None
+        else:
+            # action_space = self.get_action_space_abs(e, obs, kg)
+
+            action_space, action_space_abs = self.get_action_space_e2t_t2e(e, obs, e_abs, obs_abs, kg)
+            action_dist, entropy = policy_nn_fun_abs(X2, action_space_abs)
+            #t2e
+
             db_outcomes = [(action_space, action_dist)]
             inv_offset = None
 
@@ -1002,6 +1138,22 @@ class GraphSearchPolicy(nn.Module):
         action_mask = kg.action_space_e2t[1][e]
         action_space = ((r_space, e_space), action_mask)
         return self.apply_action_masks(action_space, e, obs, kg)
+
+    def get_action_space_e2t_t2e(self,e, obs, e_abs, obs_abs, kg):
+        if not kg.action_space_e2t or not kg.action_space:
+            print("NONE:", kg.action_space_e2t, kg.action_space)
+
+        r_space, e_space_abs = kg.action_space_e2t[0][0][e], kg.action_space_e2t[0][1][e]
+
+        e_space = kg.action_space[0][1][e]
+        action_mask_abs = kg.action_space_e2t[1][e]
+        action_mask =  kg.action_space[1][e]
+        action_space_abs = ((r_space, e_space_abs), action_mask_abs)
+        action_space = ((r_space, e_space), action_mask)
+        # print("e_space_abs.size, e_space.size():", e_space_abs.size(), e_space.size() )
+        action_real =  self.apply_action_masks(action_space, e, obs, kg)
+        action_abs = self.apply_action_masks(action_space_abs, e_abs, obs_abs, kg)
+        return action_real, action_abs
 
     def apply_action_masks(self, action_space, e, obs, kg):
         (r_space, e_space), action_mask = action_space

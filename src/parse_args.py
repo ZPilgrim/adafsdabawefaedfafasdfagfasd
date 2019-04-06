@@ -35,6 +35,7 @@ parser.add_argument('--run_analysis', action='store_true',
 parser.add_argument('--data_dir', type=str, default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data'),
                     help='directory where the knowledge graph data is stored (default: None)')
 parser.add_argument('--use_abstract_graph', type=bool, default=False, help='use_abstract_graph')
+parser.add_argument('--same_infer', type=bool, default=False, help='same_infer')
 parser.add_argument('--model_root_dir', type=str,
                     default=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'model'),
                     help='root directory where the model parameters are stored (default: None)')
