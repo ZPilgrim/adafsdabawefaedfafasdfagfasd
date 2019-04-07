@@ -235,6 +235,7 @@ def train(lf):
     dev_path = os.path.join(args.data_dir, 'dev.triples')
     entity_index_path = os.path.join(args.data_dir, 'entity2id.txt')
     relation_index_path = os.path.join(args.data_dir, 'relation2id.txt')
+
     train_data = data_utils.load_triples(
         train_path, entity_index_path, relation_index_path, group_examples_by_query=args.group_examples_by_query,
         add_reverse_relations=args.add_reversed_training_edges)
@@ -247,7 +248,12 @@ def train(lf):
     if args.checkpoint_path is not None:
         lf.load_checkpoint(args.checkpoint_path)
     if args.use_abstract_graph:
-        lf.run_train_with_abstract(train_data, dev_data)
+        with open(os.path.join(args.data_dir, 'entity2typeid.pkl'), 'rb') as f:
+            print("loading entity2typeid.pkl")
+            entity2typeid = pickle.load(f)
+        dev_data_abs = data_utils.convert_entities2typeids(
+            dev_data, entity2typeid)
+        lf.run_train_with_abstract(train_data, dev_data, dev_data_abs)
     else:
         lf.run_train(train_data, dev_data)
 
@@ -392,6 +398,7 @@ def inference(lf):
             # search path
             score_rslts = []
             missing = [0] * 10
+            success = 0
             for i, paths in enumerate(tot_paths):  # paths代表真实一个样本
                 tree_path = collections.defaultdict()
                 e1_0, e2, r_0 = data[i]  # [e1,e2, r]已经是id了 这里假设e2不是list
@@ -436,6 +443,7 @@ def inference(lf):
                             #     pass
                             # real_e3_score.append((e1_3, np.exp(path[-1][1])))
                             real_e3_score.append((e1_3, path[-1][1]))
+                        success += 1
                     else:
                         print("ERROR e not on real KG:", e1_0)
                 for e3, p in sorted(real_e3_score, key=lambda d: d[1], reverse=True)[:k]:
@@ -449,6 +457,7 @@ def inference(lf):
             else:
                 score_rslts = torch.cat(score_rslts)  # [nsample, num_entities]
             print("missing:", missing)
+            print("success paths {}, ave {}....".format(success, float(success)/len(data)))
             return score_rslts
 
         global ABS_ALL_PATH
@@ -470,6 +479,9 @@ def inference(lf):
             abs_traces = pickle.load(open('path2check_0.pkl', 'rb'))
             abs_traces = [abs_traces, ]  # 因为现在是一个样本一个Batch...
             dev_data = [dev_data[0], ]
+
+
+
         print("ALL PATH CNT:", len(abs_traces), len(dev_data))
         pred_scores = abs2real_path(abs_traces, dev_data)  # TODO:CHECK下面是不是lf.kg.all_objects_abs
         print("====> abs2real_path pred_scores shape:", pred_scores.shape)

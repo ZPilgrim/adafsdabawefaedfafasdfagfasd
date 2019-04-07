@@ -142,7 +142,7 @@ class LFramework(nn.Module):
 
             # Check dev set performance
             if self.run_analysis or (epoch_id > 0 and epoch_id % self.num_peek_epochs == 0):
-                self.eval()
+                self.eval()  #这里让train=flase，包括让abs的train也等于False么？？？？？？？？？？？？
                 self.batch_size = self.dev_batch_size
                 dev_scores = self.forward(dev_data, abs_graph=False, verbose=False)
                 print('Dev set performance: (correct evaluation)')
@@ -194,7 +194,7 @@ class LFramework(nn.Module):
                         with open(fn_ratio_file, 'a') as o_f:
                             o_f.write('{}\n'.format(fn_ratio))
 
-    def run_train_with_abstract(self, train_data, dev_data):
+    def run_train_with_abstract(self, train_data, dev_data, dev_data_abs):
         self.print_all_model_parameters()
 
         if self.optim is None:
@@ -299,12 +299,36 @@ class LFramework(nn.Module):
             if self.run_analysis or (epoch_id > 0 and epoch_id % self.num_peek_epochs == 0):
                 self.eval()
                 self.batch_size = self.dev_batch_size
+
+                #check dev set preformance of ori model 
                 dev_scores = self.forward(dev_data, verbose=False)
                 print('Dev set performance: (correct evaluation)')
                 _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.dev_objects, verbose=True)
+                #save result of ori model on ori data to metirc
                 metrics = mrr
                 print('Dev set performance: (include test set labels)')
                 src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.all_objects, verbose=True)
+                
+                #check dev set preformance of ori model for abs 
+                # dev_scores = self.forward(dev_data_abs, verbose=False, ori_on_abs=True)
+                # print('Dev set performance on abs of ori model: (correct evaluation)')
+                # _, _, _, _, mrr = src.eval.hits_and_ranks(
+                #     dev_data_abs, dev_scores, self.kg.dev_objects_abs, verbose=True)
+                # print('Dev set performance on abs of ori model : (include test set labels)')
+                # src.eval.hits_and_ranks(
+                #     dev_data_abs, dev_scores, self.kg.all_objects_abs, verbose=True)
+
+
+                #check dev set preformance for abs
+                dev_score_abs = self.forward(dev_data_abs, abs_graph=True, verbose=False)
+                print("Dev set preformacnce on abs of abs model:")
+                _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data_abs, dev_score_abs, self.kg.dev_objects, verbose=True)
+                #用抽象model在抽象图上的dev结果作为交叉检验的metric
+                metrics = mrr
+                print('Dev set performance on abs of abs model: (include test set labels)')
+                src.eval.hits_and_ranks(
+                    dev_data_abs, dev_score_abs, self.kg.all_objects, verbose=True)
+
                 # Action dropout anneaking
                 if self.model.startswith('point'):
                     eta = self.action_dropout_anneal_interval
@@ -348,8 +372,13 @@ class LFramework(nn.Module):
                             o_f.write('{}\n'.format(hit_ratio))
                         with open(fn_ratio_file, 'a') as o_f:
                             o_f.write('{}\n'.format(fn_ratio))
-
-    def forward(self, examples, abs_graph=False, verbose=False):
+    
+    '''
+    abs_graph = true 测试抽象模型在抽象图上的结果
+    abs_graph = false and ori_on_abs= ture 测试具体图在抽象图上的结果（如果relaion only = false ，assert报错）
+    abs_graph = true and ori_on_abs = false 测试具体图在具体图上的结果
+    '''
+    def forward(self, examples, abs_graph=False, ori_on_abs=False, verbose=False):
         pred_scores = []
         for example_id in tqdm(range(0, len(examples), self.batch_size)):
             mini_batch = examples[example_id:example_id + self.batch_size]
@@ -361,7 +390,10 @@ class LFramework(nn.Module):
                 # print("==>forward batch_size infer:", self.batch_size)
                 pred_score = self.predict_abs(mini_batch, verbose=verbose)
             else:
-                pred_score = self.predict(mini_batch, verbose=verbose)
+                if ori_on_abs:
+                    pred_score = self.predict(mini_batch, verbose=verbose, on_abs=ori_on_abs)
+                else:
+                    pred_score = self.predict(mini_batch, verbose=verbose, on_abs=ori_on_abs)
             pred_scores.append(pred_score[:mini_batch_size])
         scores = torch.cat(pred_scores)
         return scores

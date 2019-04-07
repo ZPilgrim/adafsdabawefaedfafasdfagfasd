@@ -140,7 +140,7 @@ class PolicyGradient(LFramework):
             last_r, e = path_trace[-1]
             obs = [e_s, q, e_t, t == (num_steps - 1), last_r, seen_nodes]
             db_outcomes, inv_offset, policy_entropy = pn.transit(
-                e, obs, kg, use_action_space_bucketing=self.use_action_space_bucketing)
+                e, obs, kg, t, use_action_space_bucketing=self.use_action_space_bucketing)
             sample_outcome = self.sample_action(db_outcomes, inv_offset)
             action = sample_outcome['action_sample']
             pn.update_path(action, kg)  # 这里的Action就是 e, r
@@ -466,7 +466,9 @@ class PolicyGradient(LFramework):
             ((r_space, e_space), action_mask) = action_space
             ((r_space_abs, e_space_abs), action_mask_abs) = action_space_abs
 
+            
             sample_action_dist = apply_action_dropout_mask(action_dist, action_mask)
+            #sample_action_dist = action_dist
             idx = torch.multinomial(sample_action_dist, 1, replacement=True)
             next_r = ops.batch_lookup(r_space, idx)
             next_e = ops.batch_lookup(e_space, idx)
@@ -487,13 +489,14 @@ class PolicyGradient(LFramework):
             type_mask = (next_e_abs.view(-1, 1) == e_space_abs)
             r_mask = (next_r_abs.view(-1, 1) == r_space_abs)
             action_mask_abs = r_mask.mul(type_mask)
-            if (action_mask_abs == 1).nonzero().size()[0] != next_e_abs.size()[0]:
-                print(action_mask_abs.size())
-                print(r_mask.size())
-                print(type_mask.size())
-                print(
-                    "----------------------------GETERROR-------------------------------")
+             
+            
+            if (action_mask_abs == 1).nonzero().size()[0] < next_e_abs.size()[0]:
                 for _ in range(r_space.size()[0]):
+                    print(action_mask_abs.size())
+                    print(r_mask.size())
+                    print(type_mask.size())
+                    print("----------------------------GETERROR-------------------------------")
                     if torch.sum(action_mask_abs[_, :]) == 0:
                         # print("r_space_abs")
                         # print(r_space_abs[_, :])
@@ -509,10 +512,12 @@ class PolicyGradient(LFramework):
                                 next_e_abs[_], r_mask[_, i], type_mask[_, i], action_mask_abs[_, i], last_e[_]))
 
                         assert(1 == 0)
-        
-            action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
+            else:
+                idx_abs = torch.multinomial(action_mask_abs.float(), 1, replacement=True)
+                #action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
+                action_prob_abs = ops.batch_lookup(action_dist_abs, idx_abs)
 
-
+            #训练时不进行action_dropout,dropout之后会使得modelsample到概率为0（在抽象图被drop的边）
             action_prob = ops.batch_lookup(action_dist, idx)
             #print ("===> action_prob_abs:", action_prob_abs.size(), " action_prob:", action_prob.size())
             sample_outcome['action_sample'] = (next_r, next_e)
@@ -597,7 +602,7 @@ class PolicyGradient(LFramework):
 
         return sample_outcome, sample_outcome_abs
 
-    def predict(self, mini_batch, verbose=False):
+    def predict(self, mini_batch, verbose=False, on_abs=False):
         # return_merge_scores= None #'sum'
         # return_merge_scores= 'sum'
 
@@ -605,7 +610,7 @@ class PolicyGradient(LFramework):
         kg, pn = self.kg, self.mdl
         e1, e2, r = self.format_batch(mini_batch)
         beam_search_output = search.beam_search(
-            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=self.return_merge_scores)
+            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, on_abs, return_merge_scores=self.return_merge_scores)
         pred_e2s = beam_search_output['pred_e2s']
         pred_e2_scores = beam_search_output['pred_e2_scores']
 

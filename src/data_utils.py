@@ -280,6 +280,7 @@ def load_triples(data_path, entity_index_path, relation_index_path, group_exampl
 
 def convert_entities2typeids(triples, entity2typeid):
     ret = []
+    # ret = set()
     for e1, e2, rs in triples:
         if type(e2) == list:
             es = [entity2typeid[_] for _ in e2]
@@ -287,10 +288,10 @@ def convert_entities2typeids(triples, entity2typeid):
             es = entity2typeid[e2]
         # if entity2typeid[e1] > 270 or entity2typeid[e2] > 270:
         #     print("ERROR etype:", e1, e2, entity2typeid[e1], entity2typeid[e2])
-        ret.append(
-            (entity2typeid[e1], es, rs)
-        )
-
+        #ret.append((entity2typeid[e1], es, rs))
+        ret.append((e1, es, rs))
+        #ret.add((entity2typeid[e1], es, rs))
+    #ret =  list(ret)
     return ret
 
 

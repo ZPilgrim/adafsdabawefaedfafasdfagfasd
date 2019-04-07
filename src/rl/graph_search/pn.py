@@ -50,7 +50,7 @@ class GraphSearchPolicy(nn.Module):
         self.fn_kg = None
         self.kg = kg
 
-    def transit(self, e, obs, kg, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
+    def transit(self, e, obs, kg, current_step, on_abs=False, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
         """
         Compute the next action distribution based on
             (a) the current node (entity) in KG and the query relation
@@ -147,13 +147,22 @@ class GraphSearchPolicy(nn.Module):
                 inv_offset = None
         else:
             action_space = self.get_action_space(e, obs, kg)
+            if on_abs:
+                if  self.relation_only:
+                    if current_step == 0:
+                        action_space = self.get_action_space_e2t(e, obs, kg)
+                    else:
+                        action_space = self.get_action_space_abs(e, obs, kg)
+                else:
+                    assert(1 == 0), print(
+                        "ori graph has no type embedding, run relation only mode")
             action_dist, entropy = policy_nn_fun(X2, action_space)
             db_outcomes = [(action_space, action_dist)]
             inv_offset = None
 
         return db_outcomes, inv_offset, entropy
 
-    def transit_on_abs(self, e, obs, kg, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
+    def transit_on_abs(self, e, obs, kg, current_step, use_action_space_bucketing=True, merge_aspace_batching_outcome=False):
         """
         Compute the next action distribution based on
             (a) the current node (entity) in KG and the query relation
@@ -264,8 +273,12 @@ class GraphSearchPolicy(nn.Module):
                 db_outcomes = [(action_space, action_dist)]
                 inv_offset = None
         else:
-            action_space = self.get_action_space_abs(e, obs, kg)
-            action_dist, entropy = policy_nn_fun_abs(X2, action_space)
+            if current_step == 0:
+                action_space_abs = self.get_action_space_e2t(e, obs, kg)
+                action_space = self.get_action_space(e, obs, kg)
+            else:
+                action_space = self.get_action_space_abs(e, obs, kg)
+            action_dist, entropy = policy_nn_fun_abs(X2, action_space_abs)
             db_outcomes = [(action_space, action_dist)]
             inv_offset = None
 
@@ -437,10 +450,11 @@ class GraphSearchPolicy(nn.Module):
             X_abs = torch.cat([H_abs, Q_abs], dim=-1)
         elif self.relation_only_in_path:
             E_s = kg.get_entity_embeddings(e_s)
-            E_s_abs = kg.get_entity_abs_embeddings(e_s_abs)
             E = kg.get_entity_embeddings(e)
-            E_abs = kg.get_entity_abs_embeddings(e_abs)
             X = torch.cat([E, H, E_s, Q], dim=-1)
+            
+            E_s_abs = kg.get_entity_abs_embeddings(e_s_abs)
+            E_abs = kg.get_entity_abs_embeddings(e_abs)
             X_abs = torch.cat([E_abs, H_abs, E_s_abs, Q_abs], dim=-1)
         else:  # 应该走的这个分支
             E = kg.get_entity_embeddings(e)
@@ -1001,7 +1015,8 @@ class GraphSearchPolicy(nn.Module):
         r_space, e_space = kg.action_space_e2t[0][0][e], kg.action_space_e2t[0][1][e]
         action_mask = kg.action_space_e2t[1][e]
         action_space = ((r_space, e_space), action_mask)
-        return self.apply_action_masks(action_space, e, obs, kg)
+        return action_space
+        #return self.apply_action_masks(action_space, e, obs, kg)
 
     def apply_action_masks(self, action_space, e, obs, kg):
         (r_space, e_space), action_mask = action_space

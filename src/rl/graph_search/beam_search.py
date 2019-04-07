@@ -18,7 +18,7 @@ from src.utils.ops import unique_max, var_cuda, zeros_var_cuda, int_var_cuda, in
 import numpy as np
 
 
-def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None):
+def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, on_abs = False, return_path_components=False, return_merge_scores=None):
     """
     Beam search from source.
 
@@ -192,7 +192,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
         obs = [e_s, q, e_t, t == (num_steps - 1), last_r, seen_nodes]
         # one step forward in search
         db_outcomes, _, _ = pn.transit(
-            e, obs, kg, use_action_space_bucketing=False,
+            e, obs, kg, on_abs, use_action_space_bucketing=False,
             merge_aspace_batching_outcome=True)  # TODO:细跟一下里面的get_action_space_in_buckets
         action_space, action_dist = db_outcomes[0]
         # => [batch_size*k, action_space_size]
@@ -449,7 +449,7 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
         obs = [e_s, q, e_t, t == (num_steps - 1), last_r, seen_nodes]
         # one step forward in search
         db_outcomes, _, _ = pn.transit_on_abs(
-            e, obs, kg, use_action_space_bucketing=True,
+            e, obs, kg, t, use_action_space_bucketing=False,
             merge_aspace_batching_outcome=True)  # TODO:细跟一下里面的get_action_space_in_buckets
         action_space, action_dist = db_outcomes[0]
         # => [batch_size*k, action_space_size]

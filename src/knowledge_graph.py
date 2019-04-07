@@ -21,7 +21,7 @@ from src.data_utils import DUMMY_ENTITY_ID, DUMMY_RELATION_ID
 from src.data_utils import START_RELATION_ID
 import src.utils.ops as ops
 from src.utils.ops import int_var_cuda, var_cuda
-from src.utils.seed_sort import sort_idx_by_pr
+#from src.utils.seed_sort import sort_idx_by_pr
 import numpy as np
 
 CUTOFF = True
@@ -340,9 +340,12 @@ class KnowledgeGraph(nn.Module):
                     targets = self.adj_list_abs[e1_abs][r]
                     for e2_abs in targets:
                         action_space_abs.append((r, e2_abs))
+                # if CUTOFF and len(action_space_abs) + 1 >= self.bandwidth:
+                #     action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
+                #                        :self.bandwidth]
                 if CUTOFF and len(action_space_abs) + 1 >= self.bandwidth:
-                    action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
-                                       :self.bandwidth]
+                     action_space_abs = sorted(action_space_abs, key=lambda x: page_rank_abs_scores[x[1]], reverse=True)[
+                                        :self.bandwidth]
             action_space_abs.insert(0, (NO_OP_RELATION_ID, e1_abs))
             return action_space_abs
 
@@ -405,7 +408,8 @@ class KnowledgeGraph(nn.Module):
                         # print( (real_type_set&abs_type_set) == real_type_set )
                         # print("real-abs:",  real_type_set - abs_type_set )
                         # print("abs-:",  abs_type_set - real_type_set)
-                action_space_e2t = list(set(action_space_e2t))
+                #action_space_e2t = list(set(action_space_e2t))
+                action_space_e2t = list(action_space_e2t)
                 action_space.insert(0, (NO_OP_RELATION_ID, e1))
                 action_space_e2t.insert(
                     0, (NO_OP_RELATION_ID, self.entity2typeid[e1]))
@@ -657,12 +661,17 @@ class KnowledgeGraph(nn.Module):
         add_object(self.dummy_e, self.dummy_e, self.dummy_r, train_objects)
         add_object(self.dummy_e, self.dummy_e, self.dummy_r, dev_objects)
         add_object(self.dummy_e, self.dummy_e, self.dummy_r, all_objects)
-        add_subject(self.dummy_e, self.dummy_e, self.dummy_r, train_subjects_abs)
-        add_subject(self.dummy_e, self.dummy_e, self.dummy_r, dev_subjects_abs)
-        add_subject(self.dummy_e, self.dummy_e, self.dummy_r, all_subjects_abs)
-        add_object(self.dummy_e, self.dummy_e, self.dummy_r, train_objects_abs)
-        add_object(self.dummy_e, self.dummy_e, self.dummy_r, dev_objects_abs)
-        add_object(self.dummy_e, self.dummy_e, self.dummy_r, all_objects_abs)
+        add_subject(self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, train_subjects_abs)
+        add_subject(
+            self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, dev_subjects_abs)
+        add_subject(
+            self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, all_subjects_abs)
+        add_object(
+            self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, train_objects_abs)
+        add_object(
+            self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, dev_objects_abs)
+        add_object(
+            self.dummy_e, self.entity2typeid[self.dummy_e], self.dummy_r, all_objects_abs)
         for file_name in ['raw.kb', 'train.triples', 'dev.triples', 'test.triples']:
             if 'NELL' in self.args.data_dir and self.args.test and file_name == 'train.triples':
                 continue
@@ -670,7 +679,8 @@ class KnowledgeGraph(nn.Module):
                 for line in f:
                     e1, e2, r = line.strip().split()
                     e1, e2, r = self.triple2ids((e1, e2, r))
-                    e1_abs, e2_abs, r_abs = self.entity2typeid[e1], self.entity2typeid[e2], r
+                    #e1_abs, e2_abs, r_abs = self.entity2typeid[e1], self.entity2typeid[e2], r
+                    e1_abs, e2_abs, r_abs = e1, self.entity2typeid[e2], r
                     if file_name in ['raw.kb', 'train.triples']:
                         add_subject(e1, e2, r, train_subjects)
                         add_subject(e1_abs, e2_abs, r_abs, train_subjects_abs)
@@ -841,7 +851,8 @@ class KnowledgeGraph(nn.Module):
             self.EDropout = nn.Dropout(self.emb_dropout_rate)
         self.relation_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
         if self.use_abstract_graph:
-            self.entity_abs_embeddings = nn.Embedding(self.num_entities_type, self.entity_dim)
+            if not self.args.relation_only:
+                self.entity_abs_embeddings = nn.Embedding(self.num_entities_type, self.entity_dim)
             self.relation_abs_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
         if self.args.model == 'complex':
             self.relation_img_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
@@ -850,9 +861,10 @@ class KnowledgeGraph(nn.Module):
     def initialize_modules(self):
         if not self.args.relation_only:
             nn.init.xavier_normal_(self.entity_embeddings.weight)
-            if self.use_abstract_graph:
+        if self.use_abstract_graph:
+            if not self.args.relation_only:
                 nn.init.xavier_normal_(self.entity_abs_embeddings.weight)
-                nn.init.xavier_normal_(self.relation_abs_embeddings.weight)
+            nn.init.xavier_normal_(self.relation_abs_embeddings.weight)
         nn.init.xavier_normal_(self.relation_embeddings.weight)
 
     @property
