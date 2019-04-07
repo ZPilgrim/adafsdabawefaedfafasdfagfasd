@@ -400,6 +400,7 @@ class GraphSearchPolicy(nn.Module):
 
             action_space, action_space_abs = self.get_action_space_e2t_t2e(e, obs, e_abs, obs_abs, kg)
             action_dist, entropy = policy_nn_fun_abs(X2, action_space_abs)
+            # action_dist, entropy = policy_nn_fun_abs(X2, action_space_abs)
             #t2e
 
             db_outcomes = [(action_space, action_dist)]
