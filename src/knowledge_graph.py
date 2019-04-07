@@ -852,7 +852,9 @@ class KnowledgeGraph(nn.Module):
             nn.init.xavier_normal_(self.entity_embeddings.weight)
             if self.use_abstract_graph:
                 nn.init.xavier_normal_(self.entity_abs_embeddings.weight)
-                nn.init.xavier_normal_(self.relation_abs_embeddings.weight)
+                # nn.init.xavier_normal_(self.relation_abs_embeddings.weight) #CHECK here why not error...
+        if self.use_abstract_graph:
+            nn.init.xavier_normal_(self.relation_abs_embeddings.weight)
         nn.init.xavier_normal_(self.relation_embeddings.weight)
 
     @property
