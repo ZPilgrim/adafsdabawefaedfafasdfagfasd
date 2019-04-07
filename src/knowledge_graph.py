@@ -841,7 +841,8 @@ class KnowledgeGraph(nn.Module):
             self.EDropout = nn.Dropout(self.emb_dropout_rate)
         self.relation_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
         if self.use_abstract_graph:
-            self.entity_abs_embeddings = nn.Embedding(self.num_entities_type, self.entity_dim)
+            if not self.args.relation_only:
+                self.entity_abs_embeddings = nn.Embedding(self.num_entities_type, self.entity_dim)
             self.relation_abs_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
         if self.args.model == 'complex':
             self.relation_img_embeddings = nn.Embedding(self.num_relations, self.relation_dim)
