@@ -1153,7 +1153,9 @@ class GraphSearchPolicy(nn.Module):
         action_space = ((r_space, e_space), action_mask)
         # print("e_space_abs.size, e_space.size():", e_space_abs.size(), e_space.size() )
         action_real =  self.apply_action_masks(action_space, e, obs, kg)
-        action_abs = self.apply_action_masks(action_space_abs, e_abs, obs_abs, kg)
+        #在apply_action_masks之后在取具体图的action_mask作为抽象图的mask！！！！不需要对抽象图apple
+        #action_abs = self.apply_action_masks(action_space_abs, e_abs, obs_abs, kg)
+        action_abs = (action_space_abs[0], action_real[1])
         return action_real, action_abs
 
     def apply_action_masks(self, action_space, e, obs, kg):
