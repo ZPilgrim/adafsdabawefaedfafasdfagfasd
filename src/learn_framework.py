@@ -434,8 +434,8 @@ class LFramework(nn.Module):
             batch_e2.append(e2)
             batch_r.append(r)
 
-            batch_e1_abs.append(e1)
-            batch_e2_abs.append(e2)
+            batch_e1_abs.append(self.kg.get_typeid(e1))
+            batch_e2_abs.append(self.kg.get_typeid(e2))
             batch_r_abs.append(r)
 
         batch_e1 = var_cuda(torch.LongTensor(batch_e1), requires_grad=False)
