@@ -46,6 +46,7 @@ class PolicyGradient(LFramework):
 
         self.path_types_abs = dict()
         self.num_path_types_abs = 0
+        self.same_start = args.same_start
 
     def reward_fun(self, e1, r, e2, pred_e2):
         return (pred_e2 == e2).float()
@@ -198,7 +199,7 @@ class PolicyGradient(LFramework):
         path_trace = [(r_s, e_s)]
         path_trace_abs = [(r_s_abs, e_s_abs)]
         pn.initialize_path((r_s, e_s), kg)
-        pn.initialize_abs_path((r_s_abs, e_s_abs), kg)
+        pn.initialize_abs_path((r_s, e_s), (r_s_abs, e_s_abs),  kg, self.same_start)
 
         for t in range(num_steps):
             last_r, e = path_trace[-1]
@@ -487,13 +488,15 @@ class PolicyGradient(LFramework):
             type_mask = (next_e_abs.view(-1, 1) == e_space_abs)
             r_mask = (next_r_abs.view(-1, 1) == r_space_abs)
             action_mask_abs = r_mask.mul(type_mask)
-            if (action_mask_abs == 1).nonzero().size()[0] != next_e_abs.size()[0]:
-                print(action_mask_abs.size())
-                print(r_mask.size())
-                print(type_mask.size())
-                print(
-                    "----------------------------GETERROR-------------------------------")
+
+
+            if (action_mask_abs == 1).nonzero().size()[0] < next_e_abs.size()[0]:
                 for _ in range(r_space.size()[0]):
+                    print(action_mask_abs.size())
+                    print(r_mask.size())
+                    print(type_mask.size())
+                    print(
+                        "----------------------------GETERROR-------------------------------")
                     if torch.sum(action_mask_abs[_, :]) == 0:
                         # print("r_space_abs")
                         # print(r_space_abs[_, :])
@@ -505,12 +508,18 @@ class PolicyGradient(LFramework):
                         # print(next_r_abs[_]
                         for i in range(len(e_space_abs[_, :])):
                             print("{},{}==>{},{}; search for r,e:({},{}), abs_r,abs_e:({},{}); r_mask:{}; type_mask:{}; action_mask:{}; e_s:{}".format(
-                                r_space[_, i], e_space[_, i], r_space_abs[_, i], e_space_abs[_, i], next_r[_], next_e[_], next_r_abs[_], 
+                                r_space[_, i], e_space[_, i], r_space_abs[_,
+                                    i], e_space_abs[_, i], next_r[_], next_e[_], next_r_abs[_],
                                 next_e_abs[_], r_mask[_, i], type_mask[_, i], action_mask_abs[_, i], last_e[_]))
 
                         assert(1 == 0)
-        
-            action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
+            else:
+                #从重复的相同type中随机选择一个action
+                idx_abs = torch.multinomial(action_mask_abs.float(), 1, replacement=True)
+                #action_prob_abs = torch.masked_select(action_dist_abs, action_mask_abs)
+                action_prob_abs = ops.batch_lookup(action_dist_abs, idx_abs)
+
+            #训练时不进行action_dropout,dropout之后会使得modelsample到概率为0（在抽象图被drop的边）
 
 
             action_prob = ops.batch_lookup(action_dist, idx)
@@ -641,7 +650,7 @@ class PolicyGradient(LFramework):
         kg, pn = self.kg, self.mdl
         e1, e2, r = self.format_batch(mini_batch)
         beam_search_output = search.beam_search_same(
-            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=self.return_merge_scores)
+            pn, e1, r, e2, kg, self.num_rollout_steps, self.beam_size, return_merge_scores=self.return_merge_scores, same_start=self.same_start)
         pred_e2s = beam_search_output['pred_e2s']
         pred_e2_scores = beam_search_output['pred_e2_scores']
 
@@ -701,7 +710,7 @@ class PolicyGradient(LFramework):
                         j, float(pred_e2_scores[i][j]), ops.format_path(search_trace, kg)))
 
         with torch.no_grad():
-            pred_scores = zeros_var_cuda([len(e1_abs), kg.num_entities])
+            pred_scores = zeros_var_cuda([len(e1_abs), kg.num_entities_type])
             for i in range(len(e1_abs)):
                 if self.return_merge_scores == 'sum' or self.return_merge_scores == 'mean':
                     pred_scores[i][pred_e2s[i].tolist()] = pred_e2_scores[i]

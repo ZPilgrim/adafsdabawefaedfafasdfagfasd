@@ -77,6 +77,9 @@ parser.add_argument('--relation_only_in_path', action='store_true',
 
 parser.add_argument('--return_merge_scores', type=str, default=None,
                     help='Merge paths the dst of which are same. Can be mean, sum, default None means Max')
+parser.add_argument('--same_start', type=bool, default=False,
+                    help='use entity embedding to init abs path (default: False)')
+                    
 
 # Knowledge Graph
 parser.add_argument('--num_graph_convolution_layers', type=int, default=0,

@@ -528,7 +528,7 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
 
 
 
-def beam_search_same(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None):
+def beam_search_same(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None, same_start=False):
     """
     Beam search from source.
 
@@ -678,10 +678,11 @@ def beam_search_same(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_comp
     # print("()()()es_size() e_s_abs.size():", e_s.size(), e_s_abs.size())
     seen_nodes_abs = int_fill_var_cuda(e_s_abs.size(), kg.dummy_e).unsqueeze(1)
     init_action_abs = (r_s, e_s_abs)
+    init_action = (r_s, e_s)
 
     # path encoder
     # pn.initialize_path(init_action, kg)
-    pn.initialize_abs_path(init_action_abs, kg)
+    pn.initialize_abs_path(init_action, init_action_abs, kg, same_start)
     if kg.args.save_paths_to_csv:
         search_trace = [(r_s, e_s)]
 

@@ -299,12 +299,37 @@ class LFramework(nn.Module):
             if self.run_analysis or (epoch_id > 0 and epoch_id % self.num_peek_epochs == 0):
                 self.eval()
                 self.batch_size = self.dev_batch_size
+
+
                 dev_scores = self.forward(dev_data, verbose=False)
                 print('Dev set performance: (correct evaluation)')
                 _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.dev_objects, verbose=True)
                 metrics = mrr
                 print('Dev set performance: (include test set labels)')
                 src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.all_objects, verbose=True)
+
+                # dev_scores_abs = self.forward(dev_data, verbose=False, abs_graph=True)
+                # print('Dev set performance of abs model on abs graph: (correct evaluation)')
+                # _, _, _, _, mrr = src.eval.hits_and_ranks(
+                #     dev_data, dev_scores_abs, self.kg.dev_objects_abs, verbose=True)
+                # metrics = mrr
+                # print(
+                #     'Dev set performance of abs model on abs graph: (correct evaluation: (include test set labels)')
+                # src.eval.hits_and_ranks(
+                #     dev_data, dev_scores, self.kg.all_objects_abs, verbose=True)
+
+                dev_scores = self.forward(dev_data, verbose=False, same_infer=True)
+                print(
+                    'Dev set performance of abs model on ori graph: (correct evaluation)')
+                _, _, _, _, mrr = src.eval.hits_and_ranks(
+                    dev_data, dev_scores, self.kg.dev_objects, verbose=True)
+                metrics = mrr
+                print(
+                    'Dev set performance of abs model on ori graph: (include test set labels)')
+                src.eval.hits_and_ranks(
+                    dev_data, dev_scores, self.kg.all_objects, verbose=True)
+
+
                 # Action dropout anneaking
                 if self.model.startswith('point'):
                     eta = self.action_dropout_anneal_interval

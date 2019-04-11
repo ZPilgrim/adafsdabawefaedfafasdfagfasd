@@ -779,12 +779,20 @@ class GraphSearchPolicy(nn.Module):
         init_c = zeros_var_cuda([self.history_num_layers, len(init_action_embedding), self.history_dim])
         self.path = [self.path_encoder(init_action_embedding, (init_h, init_c))[1]]
 
-    def initialize_abs_path(self, init_action, kg):
+    def initialize_abs_path(self, init_action, init_action_abs, kg, same_start):
         # [batch_size, action_dim]
         if self.relation_only_in_path:
-            init_action_embedding_abs = kg.get_relation_abs_embeddings(init_action[0])
+            init_action_embedding_abs = kg.get_relation_abs_embeddings(init_action_abs[0])
         else:
-            init_action_embedding_abs = self.get_action_embedding_abs(init_action, kg)
+            relation_embedding = kg.get_relation_abs_embeddings(init_action_abs[0])
+            if self.relation_only:
+                init_action_embedding_abs = relation_embedding
+            else:
+                if same_start:
+                    init_entity_embedding = kg.get_entity_embeddings(init_action[1])
+                else:
+                    init_entity_embedding = kg.get_entity_abs_embeddings(init_action_abs[1])
+                init_action_embedding_abs = torch.cat([relation_embedding, init_entity_embedding], dim=-1)
         init_action_embedding_abs.unsqueeze_(1)
         # [num_layers, batch_size, dim]
         init_h_abs = zeros_var_cuda([self.history_num_layers, len(init_action_embedding_abs), self.history_dim])
