@@ -28,6 +28,7 @@ class GraphSearchPolicy(nn.Module):
         self.history_num_layers = args.history_num_layers
         self.entity_dim = args.entity_dim
         self.relation_dim = args.relation_dim
+        self.te_start = args.te_start
         if self.relation_only:
             self.action_dim = args.relation_dim
         else:  # 应该是走了这个分支
@@ -788,7 +789,13 @@ class GraphSearchPolicy(nn.Module):
             if self.relation_only:
                 init_action_embedding_abs = relation_embedding
             else:
-                if same_start:
+                if self.te_start:
+                    e_e =  kg.get_entity_embeddings(init_action[1])
+                    t_e = kg.get_entity_abs_embeddings(init_action_abs[1])
+                    init_entity_embedding = torch.cat([e_e, t_e], dim=-1) #TODO:CHECK
+                    init_entity_embedding = self.W_init(init_entity_embedding)
+
+                elif same_start:
                     init_entity_embedding = kg.get_entity_embeddings(init_action[1])
                 else:
                     init_entity_embedding = kg.get_entity_abs_embeddings(init_action_abs[1])
@@ -1285,6 +1292,8 @@ class GraphSearchPolicy(nn.Module):
             input_dim = self.history_dim + self.entity_dim * 2 + self.relation_dim
         else:
             input_dim = self.history_dim + self.entity_dim + self.relation_dim
+        if self.te_start:
+            self.W_init = nn.Linear(self.entity_dim * 2, self.entity_dim)
         self.W1 = nn.Linear(input_dim, self.action_dim)
         self.W2 = nn.Linear(self.action_dim, self.action_dim)
         self.W1Dropout = nn.Dropout(p=self.ff_dropout_rate)
@@ -1331,6 +1340,8 @@ class GraphSearchPolicy(nn.Module):
         if self.xavier_initialization:
             nn.init.xavier_uniform_(self.W1.weight)
             nn.init.xavier_uniform_(self.W2.weight)
+            if self.te_start:
+                nn.init.xavier_uniform_(self.W_init.weight)
             for name, param in self.path_encoder.named_parameters():
                 if 'bias' in name:
                     nn.init.constant_(param, 0.0)

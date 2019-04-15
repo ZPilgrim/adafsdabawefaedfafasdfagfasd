@@ -243,12 +243,30 @@ class LFramework(nn.Module):
                     continue
                 loss, loss_abs = self.loss_with_abs(mini_batch)
                 # loss['model_loss'].backward(retain_graph=True)
+
+
+                def force_set_grad(requires_grad):
+                    names = [
+                        'kg.entity_embeddings.weight',
+
+                    ]
+                    self.kg.entity_embeddings.weight.requires_grad = requires_grad
+
+                # self.kg
+                # print ("params:", self.parameters())
+                # self.named_parameters()
+
+                force_set_grad(True)
                 loss['model_loss'].backward()
                 # loss_abs['model_loss'].backward()
                 if self.grad_norm > 0:
                     clip_grad_norm_(self.parameters(), self.grad_norm)
 
                 self.optim.step()
+                force_set_grad(False)
+                # print("DEBUG CHECK PARAMS...")
+                # for name, params in self.named_parameters(recurse=True):
+                #     print("name:", name, "grad:", params.requires_grad)
 
                 loss_abs['model_loss'].backward()
                 if self.grad_norm > 0:
