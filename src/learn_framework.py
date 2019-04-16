@@ -46,6 +46,8 @@ class LFramework(nn.Module):
         self.adam_beta1 = args.adam_beta1
         self.adam_beta2 = args.adam_beta2
         self.optim = None
+        self.merge_abs_real_score = args.merge_abs_real_score
+        print("LFramework:", self.merge_abs_real_score)
 
         self.inference = not args.train
         self.run_analysis = args.run_analysis
@@ -205,6 +207,10 @@ class LFramework(nn.Module):
         best_dev_metrics = 0
         dev_metrics_history = []
 
+        FORCE_MERGE = True
+        # print("FORCE TRAIN2 128, FORCE_MERGE")
+        # train_data = train_data[:128]
+
         for epoch_id in range(self.start_epoch, self.num_epochs):
             print('Epoch {}'.format(epoch_id))
             if self.rl_variation_tag.startswith('rs'):
@@ -242,6 +248,7 @@ class LFramework(nn.Module):
                 if len(mini_batch) < self.batch_size:
                     continue
                 loss, loss_abs = self.loss_with_abs(mini_batch)
+
                 # loss['model_loss'].backward(retain_graph=True)
 
 
@@ -293,7 +300,8 @@ class LFramework(nn.Module):
                         fns = torch.cat([fns, loss['fn']])
                         fns_abs = torch.cat([fns_abs, loss_abs['fn']])
             # Check training statistics
-            stdout_msg = 'Epoch {}: average training loss = {} loss_abs={} '.format(epoch_id, np.mean(batch_losses), np.mean(batch_losses_abs))
+            stdout_msg = 'Epoch {}: average training loss = {} loss_abs={} '.format(epoch_id, np.mean(batch_losses),
+                                                                                    np.mean(batch_losses_abs))
             if entropies:
                 stdout_msg += 'entropy = {}'.format(np.mean(entropies))
                 stdout_msg += ' entropy_abs = {}'.format(np.mean(entropies_abs))
@@ -318,7 +326,6 @@ class LFramework(nn.Module):
                 self.eval()
                 self.batch_size = self.dev_batch_size
 
-
                 dev_scores = self.forward(dev_data, verbose=False)
                 print('Dev set performance: (correct evaluation)')
                 _, _, _, _, mrr = src.eval.hits_and_ranks(dev_data, dev_scores, self.kg.dev_objects, verbose=True)
@@ -336,17 +343,44 @@ class LFramework(nn.Module):
                 # src.eval.hits_and_ranks(
                 #     dev_data, dev_scores, self.kg.all_objects_abs, verbose=True)
 
-                dev_scores = self.forward(dev_data, verbose=False, same_infer=True)
+                dev_scores_abs2real = self.forward(dev_data, verbose=False, same_infer=True)
                 print(
                     'Dev set performance of abs model on ori graph: (correct evaluation)')
                 _, _, _, _, mrr = src.eval.hits_and_ranks(
-                    dev_data, dev_scores, self.kg.dev_objects, verbose=True)
+                    dev_data, dev_scores_abs2real, self.kg.dev_objects, verbose=True)
                 metrics = mrr
                 print(
                     'Dev set performance of abs model on ori graph: (include test set labels)')
                 src.eval.hits_and_ranks(
-                    dev_data, dev_scores, self.kg.all_objects, verbose=True)
+                    dev_data, dev_scores_abs2real, self.kg.all_objects, verbose=True)
 
+                # merge
+                dev_scores_force_merge = self.merge_abs_real_score * dev_scores + (
+                                                                                      1.0 - self.merge_abs_real_score) * dev_scores_abs2real
+
+                _, _, _, _, mrr = src.eval.hits_and_ranks(
+                    dev_data, dev_scores_force_merge, self.kg.dev_objects, verbose=True)
+                metrics = mrr
+                print(
+                    'Dev set performance of abs model force_merge: (include test set labels)')
+                src.eval.hits_and_ranks(
+                    dev_data, dev_scores_force_merge, self.kg.all_objects, verbose=True)
+
+                # from src.rl.graph_search.beam_search import REAL_ALL_PATHS, SAME_ALL_PATHS
+                #merge by path， 如果real_path和abs_real_path的type一样 就认为可以merge
+
+
+                _, _, _, _, mrr = src.eval.hits_and_ranks_merge(
+                    dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
+                metrics = mrr
+                print(
+                    'Dev set performance of abs model force_merge same type: (include test set labels)')
+                src.eval.hits_and_ranks_merge(
+                    dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
+
+
+                # global REAL_ALL_PATHS, SAME_ALL_PATHS
+                # REAL_ALL_PATHS, SAME_ALL_PATHS = [], []
 
                 # Action dropout anneaking
                 if self.model.startswith('point'):
@@ -391,6 +425,16 @@ class LFramework(nn.Module):
                             o_f.write('{}\n'.format(hit_ratio))
                         with open(fn_ratio_file, 'a') as o_f:
                             o_f.write('{}\n'.format(fn_ratio))
+
+    def merge_abs_real_path_score(self, real_paths, entity_abs_paths):
+        '''
+        规则，如果一条real_paths的路径能跟entity_abs_paths对应的type的路径对应上，就merge
+        :param real_paths: 真实的entity的paths
+        :param entity_abs_paths: Abs和real一起走的paths
+        :return:
+        '''
+
+        pass
 
     def forward(self, examples, abs_graph=False, same_infer=False, verbose=False):
         pred_scores = []
@@ -542,7 +586,9 @@ class LFramework(nn.Module):
         if os.path.isfile(input_file):
             print('=> loading checkpoint \'{}\''.format(input_file))
             print ("MAP GPU FROM 0 to 1")
-            checkpoint = torch.load(input_file, map_location={'cuda:0':'cuda:1'})
+            checkpoint = torch.load(input_file, map_location={
+                'cuda:0': 'cuda:1'
+            })
             self.load_state_dict(checkpoint['state_dict'])
             if not self.inference:
                 self.start_epoch = checkpoint['epoch_id'] + 1

@@ -73,7 +73,7 @@ def hits_and_ranks(examples, scores, all_answers, verbose=False):
 
     return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
 
-def hits_and_ranks_merge(examples, scores, all_answers, verbose=False):
+def hits_and_ranks_merge(examples, scores, all_answers, scores_real, lmd, e2t, verbose=False):
     """
         Compute ranking based metrics.
         """
@@ -84,14 +84,20 @@ def hits_and_ranks_merge(examples, scores, all_answers, verbose=False):
         e1, e2, r = example
         e2_multi = dummy_mask + list(all_answers[e1][r])
         # save the relevant prediction
-        target_score = float(scores[i, e2])
+        target_score_1 = float(scores[i, e2])
+        target_score_2 = float(scores_real[i, e2])
+        if target_score_1 != 0 and target_score_2 != 0:
+            target_score = lmd * target_score_1 + (1 - lmd) * target_score_2
+        else:
+            target_score = (1 - lmd) * target_score_2 #TODO:CHECK
+            # target_score = (1 - lmd) *  target_score_2 #TODO:CHECK
         # mask all false negatives
         scores[i, e2_multi] = 0
         # write back the save prediction
         scores[i, e2] = target_score
 
     # sort and rank
-    print("+++++++>> min(scores.size(1), args.beam_size:",   scores.size(1), args.beam_size, scores)
+    # print("+++++++>> min(scores.size(1), args.beam_size:",   scores.size(1), args.beam_size, scores)
     top_k_scores, top_k_targets = torch.topk(scores, min(scores.size(1), args.beam_size))
     top_k_targets = top_k_targets.cpu().numpy()
 

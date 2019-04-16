@@ -18,6 +18,8 @@ from src.utils.ops import unique_max, var_cuda, zeros_var_cuda, int_var_cuda, in
 import numpy as np
 
 
+REAL_ALL_PATHS = []
+
 def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None):
     """
     Beam search from source.
@@ -245,6 +247,7 @@ def beam_search(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_component
                 p_c.append((e_name, top_k_edge_labels, var_to_numpy(top_k_action_prob)))
             path_components_list.append(p_c)
         beam_search_output['search_traces'] = search_trace
+        REAL_ALL_PATHS.append(beam_search_output)
 
     return beam_search_output
 
@@ -526,7 +529,7 @@ def beam_search_abs(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_compo
     return beam_search_output
 
 
-
+SAME_ALL_PATHS = []
 
 def beam_search_same(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_components=False, return_merge_scores=None, same_start=False):
     """
@@ -774,5 +777,6 @@ def beam_search_same(pn, e_s, q, e_t, kg, num_steps, beam_size, return_path_comp
                 p_c.append((e_name, top_k_edge_labels, var_to_numpy(top_k_action_prob)))
             path_components_list.append(p_c)
         beam_search_output['search_traces'] = search_trace
+        SAME_ALL_PATHS.append(beam_search_output)
 
     return beam_search_output
