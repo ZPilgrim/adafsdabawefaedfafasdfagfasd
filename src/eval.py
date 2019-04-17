@@ -138,6 +138,93 @@ def hits_and_ranks_merge(examples, scores, all_answers, scores_real, lmd, e2t, v
     return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
 
 
+# def hits_and_ranks_merge_inner(examples, scores, all_answers, scores_real, lmd, e2t, verbose=False):
+#     """
+#         Compute ranking based metrics.
+#         """
+#     assert (len(examples) == scores.shape[0])
+#     # mask false negatives in the predictions
+#     dummy_mask = [DUMMY_ENTITY_ID, NO_OP_ENTITY_ID]
+#     for i, example in enumerate(examples):
+#         e1, e2, r = example
+#         e2_multi = dummy_mask + list(all_answers[e1][r])
+#         # save the relevant prediction
+#         # target_score_1 = float(scores[i, e2])
+#         target_score_2 = float(scores_real[i, e2])
+#         # if target_score_1 != 0 and target_score_2 != 0:
+#         #     target_score = lmd * target_score_1 + (1 - lmd) * target_score_2
+#         # else:
+#         #     target_score = (1 - lmd) * target_score_2 #TODO:CHECK
+#         # target_score = (1 - lmd) *  target_score_2 #TODO:CHECK
+#         # mask all false negatives
+#         scores[i, e2_multi] = 0
+#         # write back the save prediction
+#         scores[i, e2] = target_score_2
+#
+#     # sort and rank
+#     # print("+++++++>> min(scores.size(1), args.beam_size:",   scores.size(1), args.beam_size, scores)
+#     top_k_scores, top_k_targets = torch.topk(scores, min(scores.size(1), args.beam_size))
+#     top_k_targets = top_k_targets.cpu().numpy()
+#
+#     ans = []
+#     for i, example in enumerate(top_k_targets):
+#         type_list = []
+#         target_type_list = []
+#
+#         for p, e in zip(top_k_scores[i], top_k_targets[i]):
+#             if p != 0.0:
+#                 p += scores[i, e]
+#             if len(target_type_list) == 0 or type_list[-1] != e2t[e]:
+#                 type_list.append(e2t[e])
+#                 target_type_list.append([(e, p), ])
+#             else:
+#                 target_type_list[-1].append((e, p))
+#         real_target_list = []
+#         for chunk in target_type_list:
+#             chunk = sorted(chunk, key=lambda d: d[1], reverse=True)
+#             real_target_list += [_[0] for _ in chunk]
+#         assert len(real_target_list) == len(top_k_targets[i])
+#         ans.append(real_target_list)
+#
+#     ans = np.asarray(ans, dtype=np.int32)
+#     top_k_targets = ans
+#
+#     hits_at_1 = 0
+#     hits_at_3 = 0
+#     hits_at_5 = 0
+#     hits_at_10 = 0
+#     mrr = 0
+#     for i, example in enumerate(examples):
+#         e1, e2, r = example
+#         pos = np.where(top_k_targets[i] == e2)[0]
+#         if len(pos) > 0:
+#             pos = pos[0]
+#             if pos < 10:
+#                 hits_at_10 += 1
+#                 if pos < 5:
+#                     hits_at_5 += 1
+#                     if pos < 3:
+#                         hits_at_3 += 1
+#                         if pos < 1:
+#                             hits_at_1 += 1
+#             mrr += 1.0 / (pos + 1)
+#
+#     hits_at_1 = float(hits_at_1) / len(examples)
+#     hits_at_3 = float(hits_at_3) / len(examples)
+#     hits_at_5 = float(hits_at_5) / len(examples)
+#     hits_at_10 = float(hits_at_10) / len(examples)
+#     mrr = float(mrr) / len(examples)
+#
+#     if verbose:
+#         print('Hits@1 = {}'.format(hits_at_1))
+#         print('Hits@3 = {}'.format(hits_at_3))
+#         print('Hits@5 = {}'.format(hits_at_5))
+#         print('Hits@10 = {}'.format(hits_at_10))
+#         print('MRR = {}'.format(mrr))
+#
+#     return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
+
+
 def hits_and_ranks_merge_inner(examples, scores, all_answers, scores_real, lmd, e2t, verbose=False):
     """
         Compute ranking based metrics.
@@ -168,17 +255,27 @@ def hits_and_ranks_merge_inner(examples, scores, all_answers, scores_real, lmd, 
 
     ans = []
     for i, example in enumerate(top_k_targets):
-        type_list = []
+        # type_list = []
         target_type_list = []
+        type2idx = {}
 
         for p, e in zip(top_k_scores[i], top_k_targets[i]):
             if p != 0.0:
                 p += scores[i, e]
-            if len(target_type_list) == 0 or type_list[-1] != e2t[e]:
-                type_list.append(e2t[e])
-                target_type_list.append([(e, p), ])
-            else:
-                target_type_list[-1].append((e, p))
+            e_type = e2t[e]
+            if e_type not in type2idx:
+                sz = len(type2idx)
+                type2idx[e_type] = sz
+                target_type_list.append([])
+                # type_list.append(e_type)
+
+            target_type_list[type2idx[e_type]].append((e, p))
+
+            # if len(target_type_list) == 0 or type_list[-1] != e2t[e]:
+            #     type_list.append(e2t[e])
+            #     target_type_list.append([(e, p), ])
+            # else:
+            #     target_type_list[-1].append((e, p))
         real_target_list = []
         for chunk in target_type_list:
             chunk = sorted(chunk, key=lambda d: d[1], reverse=True)
