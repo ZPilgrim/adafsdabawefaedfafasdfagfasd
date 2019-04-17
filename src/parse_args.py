@@ -179,6 +179,12 @@ parser.add_argument('--reward_shaping_threshold', type=float, default=0,
 parser.add_argument('--mu', type=float, default=1.0,
                     help='Weight over the estimated reward (default: 1.0)')
 
+
+
+parser.add_argument('--merge_abs_real_score', type=float, default=1.0,
+                    help='Weight over the estimated reward (default: 1.0)')
+
+
 # Graph Completion
 parser.add_argument('--theta', type=float, default=0.2,
                     help='Threshold for sifting high-confidence facts (default: 0.2)')
