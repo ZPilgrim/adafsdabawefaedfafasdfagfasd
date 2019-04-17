@@ -358,9 +358,10 @@ class LFramework(nn.Module):
                 dev_scores_force_merge = self.merge_abs_real_score * dev_scores + (
                                                                                       1.0 - self.merge_abs_real_score) * dev_scores_abs2real
 
-                _, _, _, _, mrr = src.eval.hits_and_ranks(
-                    dev_data, dev_scores_force_merge, self.kg.dev_objects, verbose=True)
-                metrics = mrr
+                # _, _, _, _, mrr = src.eval.hits_and_ranks(
+                #     dev_data, dev_scores_force_merge, self.kg.dev_objects, verbose=True)
+                print("=========================\n")
+                # metrics = mrr
                 print(
                     'Dev set performance of abs model force_merge: (include test set labels)')
                 src.eval.hits_and_ranks(
@@ -370,13 +371,23 @@ class LFramework(nn.Module):
                 #merge by path， 如果real_path和abs_real_path的type一样 就认为可以merge
 
 
-                _, _, _, _, mrr = src.eval.hits_and_ranks_merge(
-                    dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
-                metrics = mrr
+                # _, _, _, _, mrr = src.eval.hits_and_ranks_merge(
+                #     dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
+                # metrics = mrr
+                print("=========================\n")
+
+                print(
+                    'Dev set performance of abs model force_merge same type inner: (include test set labels)')
+                src.eval.hits_and_ranks_merge_inner(
+                    dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score,
+                    self.kg.entity2typeid, verbose=True)
+                print("=========================\n")
                 print(
                     'Dev set performance of abs model force_merge same type: (include test set labels)')
                 src.eval.hits_and_ranks_merge(
                     dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
+
+
 
 
                 # global REAL_ALL_PATHS, SAME_ALL_PATHS

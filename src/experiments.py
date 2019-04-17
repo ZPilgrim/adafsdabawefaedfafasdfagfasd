@@ -526,26 +526,89 @@ def inference(lf):
         test_data = data_utils.load_triples(
             test_path, entity_index_path, relation_index_path, seen_entities=seen_entities, verbose=False)
         print('Dev set performance:')
-        pred_scores = lf.forward(dev_data, same_infer=True, verbose=False)
+        # pred_scores = lf.forward(dev_data, same_infer=True, verbose=False)
+        dev_scores = lf.forward(dev_data, verbose=False)
         # print ("dumping...")
         # open('check_pred_scores.pkl', 'wb').write(pickle.dumps(pred_scores))
 
-        dev_metrics = src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.dev_objects, verbose=True)
+        dev_metrics = src.eval.hits_and_ranks(dev_data, dev_scores, lf.kg.dev_objects, verbose=True)
         eval_metrics['dev'] = {}
         eval_metrics['dev']['hits_at_1'] = dev_metrics[0]
         eval_metrics['dev']['hits_at_3'] = dev_metrics[1]
         eval_metrics['dev']['hits_at_5'] = dev_metrics[2]
         eval_metrics['dev']['hits_at_10'] = dev_metrics[3]
         eval_metrics['dev']['mrr'] = dev_metrics[4]
-        src.eval.hits_and_ranks(dev_data, pred_scores, lf.kg.all_objects, verbose=True)
+        print('Dev set performance: baseline (include test set labels)')
+        src.eval.hits_and_ranks(dev_data, dev_scores, lf.kg.all_objects, verbose=True)
+
+        print('Dev set performance: abs (include test set labels)')
+        dev_scores_abs2real = lf.forward(dev_data, verbose=False, same_infer=True)
+        src.eval.hits_and_ranks(dev_data, dev_scores_abs2real, lf.kg.all_objects, verbose=True)
+
+        dev_scores_force_merge = args.merge_abs_real_score * dev_scores + (
+                                                                              1.0 - args.merge_abs_real_score) * dev_scores_abs2real
+
+        print(
+            'Dev set performance of abs model force_merge: (include test set labels)')
+        src.eval.hits_and_ranks(
+            dev_data, dev_scores_force_merge, lf.kg.all_objects, verbose=True)
+
+        print(
+            'Dev set performance of abs model force_merge same type inner: (include test set labels)')
+        src.eval.hits_and_ranks_merge_inner(
+            dev_data, dev_scores, lf.kg.all_objects, dev_scores_abs2real, lf.merge_abs_real_score,
+            lf.kg.entity2typeid, verbose=True)
+
+
+
         print('Test set performance:')
-        pred_scores = lf.forward(test_data, same_infer=True, verbose=False)
+        pred_scores = lf.forward(test_data,  verbose=False)
         test_metrics = src.eval.hits_and_ranks(test_data, pred_scores, lf.kg.all_objects, verbose=True)
         eval_metrics['test']['hits_at_1'] = test_metrics[0]
         eval_metrics['test']['hits_at_3'] = test_metrics[1]
         eval_metrics['test']['hits_at_5'] = test_metrics[2]
         eval_metrics['test']['hits_at_10'] = test_metrics[3]
         eval_metrics['test']['mrr'] = test_metrics[4]
+
+        test_scores_abs2real = lf.forward(test_data, verbose=False, same_infer=True)
+        # print(
+        #     'Test set performance of abs model on ori graph: (correct evaluation)')
+        # _, _, _, _, mrr = src.eval.hits_and_ranks(
+        #     test_data, test_scores_abs2real, lf.kg.all_objects, verbose=True)
+        # metrics = mrr
+        print(
+            'Test set performance of abs model on ori graph: (include test set labels)')
+        src.eval.hits_and_ranks(
+            test_data, test_scores_abs2real, lf.kg.all_objects, verbose=True)
+
+        # merge
+        test_scores_force_merge = lf.merge_abs_real_score * pred_scores + (
+                                                                              1.0 - args.merge_abs_real_score) * test_scores_abs2real
+
+        # _, _, _, _, mrr = src.eval.hits_and_ranks(
+        #     dev_data, dev_scores_force_merge, self.kg.dev_objects, verbose=True)
+        print("=========================\n")
+        # metrics = mrr
+        print(
+            'Test set performance of abs model force_merge: (include test set labels)')
+        src.eval.hits_and_ranks(
+            test_data, test_scores_force_merge, lf.kg.all_objects, verbose=True)
+
+        # from src.rl.graph_search.beam_search import REAL_ALL_PATHS, SAME_ALL_PATHS
+        # merge by path， 如果real_path和abs_real_path的type一样 就认为可以merge
+
+
+        # _, _, _, _, mrr = src.eval.hits_and_ranks_merge(
+        #     dev_data, dev_scores, self.kg.all_objects, dev_scores_abs2real, self.merge_abs_real_score, self.kg.entity2typeid, verbose=True)
+        # metrics = mrr
+        print("=========================\n")
+
+        print(
+            'Test set performance of abs model force_merge same type inner: (include test set labels)')
+        src.eval.hits_and_ranks_merge_inner(
+            test_data, pred_scores, lf.kg.all_objects, test_scores_abs2real, args.merge_abs_real_score,
+            lf.kg.entity2typeid, verbose=True)
+
 
     elif args.use_abstract_graph:
         print ("CHECK abs verbose True")
