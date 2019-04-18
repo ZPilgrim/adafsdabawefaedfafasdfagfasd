@@ -7,7 +7,7 @@
  Compute Evaluation Metrics.
  Code adapted from https://github.com/TimDettmers/ConvE/blob/master/evaluation.py
 """
-
+import copy
 import numpy as np
 import pickle
 
@@ -225,13 +225,15 @@ def hits_and_ranks_merge(examples, scores, all_answers, scores_real, lmd, e2t, v
 #     return hits_at_1, hits_at_3, hits_at_5, hits_at_10, mrr
 
 
-def hits_and_ranks_merge_inner(examples, scores, all_answers, scores_real, lmd, e2t, verbose=False):
+def hits_and_ranks_merge_inner(examples, baseline_scores, all_answers, scores_real, lmd, e2t, verbose=False):
     """
         Compute ranking based metrics.
         """
-    assert (len(examples) == scores.shape[0])
+    assert (len(examples) == baseline_scores.shape[0])
+    assert (len(examples) == scores_real.shape[0])
     # mask false negatives in the predictions
     dummy_mask = [DUMMY_ENTITY_ID, NO_OP_ENTITY_ID]
+    scores = copy.deepcopy(scores_real)
     for i, example in enumerate(examples):
         e1, e2, r = example
         e2_multi = dummy_mask + list(all_answers[e1][r])
@@ -261,7 +263,7 @@ def hits_and_ranks_merge_inner(examples, scores, all_answers, scores_real, lmd, 
 
         for p, e in zip(top_k_scores[i], top_k_targets[i]):
             if p != 0.0:
-                p += scores[i, e]
+                p += baseline_scores[i, e]
             e_type = e2t[e]
             if e_type not in type2idx:
                 sz = len(type2idx)
